@@ -506,7 +506,7 @@ class IBin(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(self, cfg='yolor-csp-c.yaml', ch=3, nc=None, anchors=None):  # model, input channels, number of classes
+    def __init__(self, cfg='yolor-csp-c.yaml', ch=4, nc=None, anchors=None):  # model, input channels, number of classes
         super(Model, self).__init__()
         self.traced = False
         if isinstance(cfg, dict):
@@ -828,7 +828,7 @@ if __name__ == '__main__':
     model.train()
     
     if opt.profile:
-        img = torch.rand(1, 3, 640, 640).to(device)
+        img = torch.rand(1, 4, 640, 640).to(device)
         y = model(img, profile=True)
 
     # Profile

@@ -111,7 +111,7 @@ def output_to_target(output):
     return np.array(targets)
 
 
-def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max_size=640, max_subplots=16):
+def plot_images(images, targets, paths=None, fname='images.png', names=None, max_size=640, max_subplots=16):
     # Plot image grid with labels
 
     if isinstance(images, torch.Tensor):
@@ -136,7 +136,7 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
         w = math.ceil(scale_factor * w)
 
     colors = color_list()  # list of colors
-    mosaic = np.full((int(ns * h), int(ns * w), 3), 255, dtype=np.uint8)  # init
+    mosaic = np.full((int(ns * h), int(ns * w), 4), 255, dtype=np.uint8)  # init
     for i, img in enumerate(images):
         if i == max_subplots:  # if last batch has fewer images than we expect
             break
@@ -234,7 +234,7 @@ def plot_targets_txt():  # from utils.plots import *; plot_targets_txt()
         ax[i].hist(x[i], bins=100, label='%.3g +/- %.3g' % (x[i].mean(), x[i].std()))
         ax[i].legend()
         ax[i].set_title(s[i])
-    plt.savefig('targets.jpg', dpi=200)
+    plt.savefig('targets.png', dpi=200)
 
 
 def plot_study_txt(path='', x=None):  # from utils.plots import *; plot_study_txt()
@@ -279,7 +279,7 @@ def plot_labels(labels, names=(), save_dir=Path(''), loggers=None):
 
     # seaborn correlogram
     sns.pairplot(x, corner=True, diag_kind='auto', kind='hist', diag_kws=dict(bins=50), plot_kws=dict(pmax=0.9))
-    plt.savefig(save_dir / 'labels_correlogram.jpg', dpi=200)
+    plt.savefig(save_dir / 'labels_correlogram.png', dpi=200)
     plt.close()
 
     # matplotlib labels
@@ -308,14 +308,14 @@ def plot_labels(labels, names=(), save_dir=Path(''), loggers=None):
         for s in ['top', 'right', 'left', 'bottom']:
             ax[a].spines[s].set_visible(False)
 
-    plt.savefig(save_dir / 'labels.jpg', dpi=200)
+    plt.savefig(save_dir / 'labels.png', dpi=200)
     matplotlib.use('Agg')
     plt.close()
 
     # loggers
     for k, v in loggers.items() or {}:
         if k == 'wandb' and v:
-            v.log({"Labels": [v.Image(str(x), caption=x.name) for x in save_dir.glob('*labels*.jpg')]}, commit=False)
+            v.log({"Labels": [v.Image(str(x), caption=x.name) for x in save_dir.glob('*labels*.png')]}, commit=False)
 
 
 def plot_evolution(yaml_file='data/hyp.finetune.yaml'):  # from utils.plots import *; plot_evolution()

@@ -247,7 +247,7 @@ class LoadWebcam:  # for inference
 
         # Print
         assert ret_val, f'Camera Error {self.pipe}'
-        img_path = 'webcam.jpg'
+        img_path = 'webcam.png'
         print(f'webcam {self.count}: ', end='')
 
         # Padded resize
@@ -581,7 +581,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             #img, labels = self.albumentations(img, labels)
 
             # Augment colorspace
-            augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
+            img = augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
 
             # Apply cutouts
             # if random.random() < 0.9:
@@ -668,7 +668,7 @@ def load_image(self, index):
     img = self.imgs[index]
     if img is None:  # not cached
         path = self.img_files[index]
-        img = cv2.imread(path)  # BGR
+        img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # BGR
         assert img is not None, 'Image Not Found ' + path
         h0, w0 = img.shape[:2]  # orig hw
         r = self.img_size / max(h0, w0)  # resize image to img_size
@@ -682,6 +682,8 @@ def load_image(self, index):
 
 def augment_hsv(img, hgain=0.5, sgain=0.5, vgain=0.5):
     r = np.random.uniform(-1, 1, 3) * [hgain, sgain, vgain] + 1  # random gains
+    _,_,_, alpha = cv2.split(img)
+    img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
     hue, sat, val = cv2.split(cv2.cvtColor(img, cv2.COLOR_BGR2HSV))
     dtype = img.dtype  # uint8
 
@@ -691,18 +693,24 @@ def augment_hsv(img, hgain=0.5, sgain=0.5, vgain=0.5):
     lut_val = np.clip(x * r[2], 0, 255).astype(dtype)
 
     img_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val))).astype(dtype)
-    cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=img)  # no return needed
+    img = cv2.cvtColor(img, cv2.COLOR_HSV2BGR)
+    img = cv2.cvtColor(img_hsv, cv2.COLOR_BGR2BGRA)  # no return needed
+    img[:, :, 3] = alpha
+    return img
 
 
 def hist_equalize(img, clahe=True, bgr=False):
     # Equalize histogram on BGR image 'img' with img.shape(n,m,3) and range 0-255
-    yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV if bgr else cv2.COLOR_RGB2YUV)
+    _,_,_, alpha = cv2.split(img)    
+    yuv = cv2.cvtColor(img, cv2.COLOR_BGRA2YUV if bgr else cv2.COLOR_RGBA2YUV)
     if clahe:
         c = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         yuv[:, :, 0] = c.apply(yuv[:, :, 0])
     else:
         yuv[:, :, 0] = cv2.equalizeHist(yuv[:, :, 0])  # equalize Y channel histogram
-    return cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR if bgr else cv2.COLOR_YUV2RGB)  # convert YUV image to RGB
+    img = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGRA if bgr else cv2.COLOR_YUV2RGBA) # convert YUV image to RGB
+    img[:, :, 3] = alpha
+    return img
 
 
 def load_mosaic(self, index):
@@ -1276,7 +1284,7 @@ def extract_boxes(path='../coco/'):  # from utils.datasets import *; extract_box
 
                 for j, x in enumerate(lb):
                     c = int(x[0])  # class
-                    f = (path / 'classifier') / f'{c}' / f'{path.stem}_{im_file.stem}_{j}.jpg'  # new filename
+                    f = (path / 'classifier') / f'{c}' / f'{path.stem}_{im_file.stem}_{j}.png'  # new filename
                     if not f.parent.is_dir():
                         f.parent.mkdir(parents=True)
 
