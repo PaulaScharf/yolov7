@@ -623,7 +623,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             labels_out[:, 1:] = torch.from_numpy(labels)
 
         # Convert
-        img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
+        img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA) # BGRA to RGBA
+        img = img.transpose(2, 0, 1)  # to 3x416x416
         img = np.ascontiguousarray(img)
 
         return torch.from_numpy(img), labels_out, self.img_files[index], shapes
@@ -693,8 +694,8 @@ def augment_hsv(img, hgain=0.5, sgain=0.5, vgain=0.5):
     lut_val = np.clip(x * r[2], 0, 255).astype(dtype)
 
     img_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val))).astype(dtype)
-    img = cv2.cvtColor(img, cv2.COLOR_HSV2BGR)
-    img = cv2.cvtColor(img_hsv, cv2.COLOR_BGR2BGRA)  # no return needed
+    img = cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)  # no return needed
     img[:, :, 3] = alpha
     return img
 
@@ -702,13 +703,13 @@ def augment_hsv(img, hgain=0.5, sgain=0.5, vgain=0.5):
 def hist_equalize(img, clahe=True, bgr=False):
     # Equalize histogram on BGR image 'img' with img.shape(n,m,3) and range 0-255
     _,_,_, alpha = cv2.split(img)    
-    yuv = cv2.cvtColor(img, cv2.COLOR_BGRA2YUV if bgr else cv2.COLOR_RGBA2YUV)
+    yuv = cv2.cvtColor(img, cv2.COLOR_BGRA2YUV_I420 if bgr else cv2.COLOR_RGBA2YUV_I420)
     if clahe:
         c = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        yuv[:, :, 0] = c.apply(yuv[:, :, 0])
+        yuv[:, 0] = c.apply(yuv[:, 0])[:, 0]
     else:
-        yuv[:, :, 0] = cv2.equalizeHist(yuv[:, :, 0])  # equalize Y channel histogram
-    img = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGRA if bgr else cv2.COLOR_YUV2RGBA) # convert YUV image to RGB
+        yuv[:, 0] = cv2.equalizeHist(yuv[:, 0])  # equalize Y channel histogram
+    img = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGRA_NV21 if bgr else cv2.COLOR_YUV2RGBA_NV21) # convert YUV image to RGB
     img[:, :, 3] = alpha
     return img
 
