@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import random
+import shutil
 import time
 from copy import deepcopy
 from pathlib import Path
@@ -26,6 +27,7 @@ from models.experimental import attempt_load
 from models.yolo import Model
 from utils.autoanchor import check_anchors
 from utils.datasets import create_dataloader
+from utils.tiling import tile_images_labels
 from utils.general import labels_to_class_weights, increment_path, labels_to_image_weights, init_seeds, \
     fitness, strip_optimizer, get_latest_run, check_dataset, check_file, check_git_status, check_img_size, \
     check_requirements, print_mutation, set_logging, one_cycle, colorstr
@@ -241,6 +243,10 @@ def train(hyp, opt, device, tb_writer=None):
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
         logger.info('Using SyncBatchNorm()')
 
+    if opt.tiles > 0:
+        train_path = tile_images_labels(train_path, opt.tiles)
+        imgsz = int(imgsz/opt.tiles)
+
     # Trainloader
     dataloader, dataset = create_dataloader(train_path, imgsz, batch_size, gs, opt,
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=rank,
@@ -252,6 +258,10 @@ def train(hyp, opt, device, tb_writer=None):
 
     # Process 0
     if rank in [-1, 0]:
+        if opt.tiles > 0:
+            test_path = tile_images_labels(test_path, opt.tiles)
+            imgsz = int(imgsz_test/opt.tiles)
+
         testloader = create_dataloader(test_path, imgsz_test, batch_size * 2, gs, opt,  # testloader
                                        hyp=hyp, cache=opt.cache_images and not opt.notest, rect=True, rank=-1,
                                        world_size=opt.world_size, workers=opt.workers,
@@ -521,6 +531,9 @@ def train(hyp, opt, device, tb_writer=None):
     else:
         dist.destroy_process_group()
     torch.cuda.empty_cache()
+    if opt.tiles > 0:
+        shutil.rmtree('/'.join(train_path.split('/')[:-1]))
+        shutil.rmtree('/'.join(test_path.split('/')[:-1]))
     return results
 
 
@@ -562,6 +575,7 @@ if __name__ == '__main__':
     parser.add_argument('--artifact_alias', type=str, default="latest", help='version of dataset artifact to be used')
     parser.add_argument('--freeze', nargs='+', type=int, default=[0], help='Freeze layers: backbone of yolov7=50, first3=0 1 2')
     parser.add_argument('--v5-metric', action='store_true', help='assume maximum recall as 1.0 in AP calculation')
+    parser.add_argument('--tiles', type=int, default=0, help='how many tiles will be created (will be squared)')
     opt = parser.parse_args()
 
     # Set DDP variables
