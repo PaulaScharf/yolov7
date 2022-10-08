@@ -530,6 +530,9 @@ def train(hyp, opt, device, tb_writer=None):
     else:
         dist.destroy_process_group()
     torch.cuda.empty_cache()
+    if opt.tiles > 0:
+        shutil.rmtree('/'.join(train_path.split('/')[:-1]))
+        shutil.rmtree('/'.join(test_path.split('/')[:-1]))
     return results
 
 
