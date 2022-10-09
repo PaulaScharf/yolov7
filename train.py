@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import random
+import shutil
 import time
 from copy import deepcopy
 from pathlib import Path
@@ -27,6 +28,7 @@ from models.yolo import Model
 from utils.autoanchor import check_anchors
 from utils.datasets import create_dataloader
 from utils.tiling import tile_images_labels
+from utils.filter_no_class import filter_no_class
 from utils.general import labels_to_class_weights, increment_path, labels_to_image_weights, init_seeds, \
     fitness, strip_optimizer, get_latest_run, check_dataset, check_file, check_git_status, check_img_size, \
     check_requirements, print_mutation, set_logging, one_cycle, colorstr
@@ -243,8 +245,13 @@ def train(hyp, opt, device, tb_writer=None):
         logger.info('Using SyncBatchNorm()')
 
     if opt.tiles > 0:
-        train_path = tile_images_labels(train_path, opt.tiles)
+        tiled_train_path = tile_images_labels(train_path, opt.tiles)
+        train_path = tiled_train_path
         imgsz = int(imgsz/opt.tiles)
+
+    if opt.no_class<100:
+        filt_train_path = filter_no_class(train_path, opt.no_class/100)
+        train_path = filt_train_path
 
     # Trainloader
     dataloader, dataset = create_dataloader(train_path, imgsz, batch_size, gs, opt,
@@ -258,8 +265,12 @@ def train(hyp, opt, device, tb_writer=None):
     # Process 0
     if rank in [-1, 0]:
         if opt.tiles > 0:
-            test_path = tile_images_labels(test_path, opt.tiles)
+            tiled_test_path = tile_images_labels(test_path, opt.tiles)
+            train_path = tiled_test_path
             imgsz = int(imgsz_test/opt.tiles)
+        if opt.no_class<100:
+            filt_test_path = filter_no_class(test_path, opt.no_class/100)
+            test_path = filt_test_path
 
         testloader = create_dataloader(test_path, imgsz_test, batch_size * 2, gs, opt,  # testloader
                                        hyp=hyp, cache=opt.cache_images and not opt.notest, rect=True, rank=-1,
@@ -530,9 +541,12 @@ def train(hyp, opt, device, tb_writer=None):
     else:
         dist.destroy_process_group()
     torch.cuda.empty_cache()
+    if opt.no_class < 100:
+        shutil.rmtree('/'.join(filt_train_path.split('/')[:-1]))
+        shutil.rmtree('/'.join(filt_test_path.split('/')[:-1]))
     if opt.tiles > 0:
-        shutil.rmtree('/'.join(train_path.split('/')[:-1]))
-        shutil.rmtree('/'.join(test_path.split('/')[:-1]))
+        shutil.rmtree('/'.join(tiled_train_path.split('/')[:-1]))
+        shutil.rmtree('/'.join(tiled_test_path.split('/')[:-1]))
     return results
 
 
@@ -575,6 +589,7 @@ if __name__ == '__main__':
     parser.add_argument('--freeze', nargs='+', type=int, default=[0], help='Freeze layers: backbone of yolov7=50, first3=0 1 2')
     parser.add_argument('--v5-metric', action='store_true', help='assume maximum recall as 1.0 in AP calculation')
     parser.add_argument('--tiles', type=int, default=0, help='how many tiles will be created (will be squared)')
+    parser.add_argument('--no-class', type=int, default=100, choices=range(0,101), metavar="[0-100]", help='maximum percentage of images without labels')
     opt = parser.parse_args()
 
     # Set DDP variables

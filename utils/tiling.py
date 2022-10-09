@@ -41,7 +41,7 @@ def tile_images_labels(path, tiles):
         os.makedirs(new_path + "/images")
         os.makedirs(new_path + "/labels")
     elif len(os.listdir(new_path)) > 0:
-        raise Exception("Target folder should be empty")
+        raise Exception("Tiling folder should be empty")
 
     for imname in img_files:
         im = Image.open(imname)
