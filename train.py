@@ -265,8 +265,13 @@ def train(hyp, opt, device, tb_writer=None):
     # Process 0
     if rank in [-1, 0]:
         if opt.tiles > 0:
-            test_path = tile_images_labels(test_path, opt.tiles)
+            tiled_test_path = tile_images_labels(test_path, opt.tiles)
+            test_path = tiled_test_path  
             imgsz = int(imgsz_test/opt.tiles)
+        
+        if opt.no_class<100:
+            filt_test_path = filter_no_class(test_path, opt.no_class/100)
+            test_path = filt_test_path
 
         testloader = create_dataloader(test_path, imgsz_test, batch_size * 2, gs, opt,  # testloader
                                        hyp=hyp, cache=opt.cache_images and not opt.notest, rect=True, rank=-1,
