@@ -266,7 +266,7 @@ def train(hyp, opt, device, tb_writer=None):
     if rank in [-1, 0]:
         if opt.tiles > 0:
             tiled_test_path = tile_images_labels(test_path, opt.tiles)
-            train_path = tiled_test_path
+            test_path = tiled_test_path
             imgsz = int(imgsz_test/opt.tiles)
         if opt.no_class<100:
             filt_test_path = filter_no_class(test_path, opt.no_class/100)
