@@ -83,8 +83,8 @@ def tile_images_labels(path, tiles):
                 sliced = imr[i*(height//tiles):(i+1)*(height//tiles), j*(width//tiles):(j+1)*(width//tiles)]
                 sliced_im = Image.fromarray(sliced)
                 filename = imname.split('/')[-1]
-                slice_path = new_path + "/images/" + filename.split('/')[-1].split('.')[0] + f'_{i}_{j}.' + filename.split('.')[-1]                           
-                slice_labels_path = new_path + "/labels/" + filename.split('/')[-1].split('.')[0] + f'_{i}_{j}.txt'                          
+                slice_path = new_path + f'/images/{i}_{j}_' + filename.split('/')[-1].split('.')[0] + '.' + filename.split('.')[-1]                           
+                slice_labels_path = new_path + f'/labels/{i}_{j}_' + filename.split('/')[-1].split('.')[0] + '.txt'                          
                 # print(slice_path)
                 sliced_im.save(slice_path)
 
