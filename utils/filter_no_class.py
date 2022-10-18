@@ -2,7 +2,7 @@ import os
 import random
 import shutil
 
-img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo']  # acceptable image suffixes
+img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo', '.npy']  # acceptable image suffixes
 
 def filter_no_class(path, max_perc):
     new_path = path.split('/')[:-1]

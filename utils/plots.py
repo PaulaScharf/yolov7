@@ -141,7 +141,7 @@ def plot_images(images, targets, paths=None, fname='images.jpg', four_ch=False, 
         if i == max_subplots:  # if last batch has fewer images than we expect
             break
         
-        if multi_frame > 0:
+        if multi_frame > 1:
             if four_ch:
                 img = img[:-(img.shape[0]-4),:,:]
             else:

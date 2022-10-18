@@ -32,7 +32,7 @@ from utils.torch_utils import torch_distributed_zero_first
 
 # Parameters
 help_url = 'https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
-img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo']  # acceptable image suffixes
+img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo', 'npy']  # acceptable image suffixes
 vid_formats = ['mov', 'avi', 'mp4', 'mpg', 'mpeg', 'm4v', 'wmv', 'mkv']  # acceptable video suffixes
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def exif_size(img):
 
 
 def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=False, cache=False, pad=0.0, rect=False,
-                      rank=-1, world_size=1, workers=8, image_weights=False, quad=False, prefix='', multi_frame=1, tiles=0):
+                      rank=-1, world_size=1, workers=8, image_weights=False, quad=False, prefix='', multi_frame=1, tiles=0, four_ch=False):
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache
     with torch_distributed_zero_first(rank):
         dataset = LoadImagesAndLabels(path, imgsz, batch_size,
@@ -77,7 +77,8 @@ def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=Fa
                                       image_weights=image_weights,
                                       prefix=prefix,
                                       multi_frame=multi_frame,
-                                      tiles=tiles)
+                                      tiles=tiles,
+                                      four_ch=four_ch)
 
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, workers])  # number of workers
@@ -110,7 +111,8 @@ class InfiniteDataLoader(torch.utils.data.dataloader.DataLoader):
         return len(self.batch_sampler.sampler)
 
     def __iter__(self):
-        for i in range(len(self)-((self.tiles*(self.multi_frame-1))*2)):
+        skip_index = 0 #((self.tiles*(self.multi_frame-1))*2) if self.tiles > 0 else self.multi_frame-1
+        for i in range(len(self)-skip_index):
             yield next(self.iterator)
 
 
@@ -356,7 +358,7 @@ def img2label_paths(img_paths):
 
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
-                 cache_images=False, single_cls=False, stride=32, pad=0.0, prefix='', multi_frame=1, tiles=0):
+                 cache_images=False, single_cls=False, stride=32, pad=0.0, prefix='', multi_frame=1, tiles=0, four_ch=False):
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -369,6 +371,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         #self.albumentations = Albumentations() if augment else None
         self.multi_frame=multi_frame
         self.tiles=tiles
+        self.four_ch=four_ch
 
         try:
             f = []  # image files
@@ -481,12 +484,17 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         for i, (im_file, lb_file) in enumerate(pbar):
             try:
                 # verify images
-                im = Image.open(im_file)
+                if im_file.endswith('.npy'):
+                    imr = np.load(im_file)[:,:,:3]
+                    im = Image.fromarray(imr)
+                else:
+                    im = Image.open(im_file)
                 im.verify()  # PIL verify
                 shape = exif_size(im)  # image size
                 segments = []  # instance segments
                 assert (shape[0] > 9) & (shape[1] > 9), f'image size {shape} <10 pixels'
-                assert im.format.lower() in img_formats, f'invalid image format {im.format}'
+                if not im_file.endswith('.npy'):
+                    assert im.format.lower() in img_formats, f'invalid image format {im.format}'
 
                 # verify labels
                 if os.path.isfile(lb_file):
@@ -539,16 +547,17 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
     def __getitem__(self, index):
         index = self.indices[index]  # linear, shuffled, or image_weights
-        index_n = index + int((index+(self.multi_frame-1)) / self.tiles)
+        # if self.tiles > 0:
+        #     index = int((index+(self.multi_frame-1)) / self.tiles)
 
         hyp = self.hyp
         mosaic = self.mosaic and random.random() < hyp['mosaic']
         if mosaic and False:
             # Load mosaic
             if random.random() < 0.8:
-                img, labels = load_mosaic(self, index_n)
+                img, labels = load_mosaic(self, index)
             else:
-                img, labels = load_mosaic9(self, index_n)
+                img, labels = load_mosaic9(self, index)
             shapes = None
 
             # MixUp https://arxiv.org/pdf/1710.09412.pdf
@@ -564,17 +573,19 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         else:
             imgs = []
             # Load image
-            for i in range(self.multi_frame):
-                img, (h0, w0), (h, w) = load_image(self, index_n + i) # TODO: varying image shapes
-                imgs.append(img)
+            img, (h0, w0), (h, w), _ = load_image(self, index) # TODO: varying image shapes
 
+            no_channels = 4 if self.four_ch else 3
+            for i in range(int(img.shape[2]/no_channels)):
+                imgs.append(img[:,:,img.shape[2]-no_channels*(i+1):img.shape[2]-no_channels*i])
+            
             # Letterbox
-            shape = self.batch_shapes[self.batch[index_n]] if self.rect else self.img_size  # final letterboxed shape
+            shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
             for i, img in enumerate(imgs):
                 imgs[i], ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment) # TODO: varying image shapes
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
-            labels = self.labels[index_n+(self.multi_frame-1)].copy()
+            labels = self.labels[index].copy()
             if labels.size:  # normalized xywh to pixel xyxy format
                 labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
 
@@ -647,7 +658,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 final_img = img
             else:
                 final_img = np.append(final_img, img, axis=0)
-        return torch.from_numpy(final_img), labels_out, self.img_files[index_n], shapes
+        return torch.from_numpy(final_img), labels_out, self.img_files[index], shapes
 
     @staticmethod
     def collate_fn(batch):
@@ -689,16 +700,21 @@ def load_image(self, index):
     img = self.imgs[index]
     if img is None:  # not cached
         path = self.img_files[index]
-        img = cv2.imread(path)  # BGR
+        if path.endswith('.npy'):
+            img = np.load(path)
+        else:
+            img = cv2.imread(path)  # BGR
         assert img is not None, 'Image Not Found ' + path
         h0, w0 = img.shape[:2]  # orig hw
         r = self.img_size / max(h0, w0)  # resize image to img_size
         if r != 1:  # always resize down, only resize up if training with augmentation
             interp = cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR
-            img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
-        return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
+            no_channels = 4 if img.shape[2]%4==0 else 3
+            for i in range(int(img.shape[2]/no_channels)):
+                img[:,:,no_channels*i:no_channels*(i+1)] = cv2.resize(img[:,:,no_channels*i:no_channels*(i+1)], (int(w0 * r), int(h0 * r)), interpolation=interp)
+        return img, (h0, w0), img.shape[:2], path  # img, hw_original, hw_resized
     else:
-        return self.imgs[index], self.img_hw0[index], self.img_hw[index]  # img, hw_original, hw_resized
+        return self.imgs[index], self.img_hw0[index], self.img_hw[index], ''  # img, hw_original, hw_resized
 
 
 def augment_hsv(imgs, hgain=0.5, sgain=0.5, vgain=0.5):
@@ -736,7 +752,7 @@ def load_mosaic(self, index):
     indices = [index] + random.choices(self.indices, k=3)  # 3 additional image indices
     for i, index in enumerate(indices):
         # Load image
-        img, _, (h, w) = load_image(self, index)
+        img, _, (h, w), _ = load_image(self, index)
 
         # place img in img4
         if i == 0:  # top left
@@ -794,7 +810,7 @@ def load_mosaic9(self, index):
     indices = [index] + random.choices(self.indices, k=8)  # 8 additional image indices
     for i, index in enumerate(indices):
         # Load image
-        img, _, (h, w) = load_image(self, index)
+        img, _, (h, w), _ = load_image(self, index)
 
         # place img in img9
         if i == 0:  # center
@@ -871,7 +887,7 @@ def load_samples(self, index):
     indices = [index] + random.choices(self.indices, k=3)  # 3 additional image indices
     for i, index in enumerate(indices):
         # Load image
-        img, _, (h, w) = load_image(self, index)
+        img, _, (h, w),_ = load_image(self, index)
 
         # place img in img4
         if i == 0:  # top left

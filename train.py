@@ -28,6 +28,7 @@ from models.yolo import Model
 from utils.autoanchor import check_anchors
 from utils.datasets import create_dataloader
 from utils.tiling import tile_images_labels
+from utils.multi_frame import stack_images
 from utils.filter_no_class import filter_no_class
 from utils.general import labels_to_class_weights, increment_path, labels_to_image_weights, init_seeds, \
     fitness, strip_optimizer, get_latest_run, check_dataset, check_file, check_git_status, check_img_size, \
@@ -244,11 +245,13 @@ def train(hyp, opt, device, tb_writer=None):
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
         logger.info('Using SyncBatchNorm()')
 
+    if opt.multi_frame > 1:
+        multi_train_path = stack_images(train_path, opt.multi_frame)
+        train_path = multi_train_path
     if opt.tiles > 0:
         tiled_train_path = tile_images_labels(train_path, opt.tiles)
         train_path = tiled_train_path
         imgsz = int(imgsz/opt.tiles)
-
     if opt.no_class<100:
         filt_train_path = filter_no_class(train_path, opt.no_class/100)
         train_path = filt_train_path
@@ -258,17 +261,20 @@ def train(hyp, opt, device, tb_writer=None):
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=rank,
                                             world_size=opt.world_size, workers=opt.workers,
                                             image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '),
-                                            multi_frame = opt.multi_frame, tiles=opt.tiles)
+                                            multi_frame = opt.multi_frame, tiles=opt.tiles, four_ch=opt.four_channels)
     mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
     nb = len(dataloader)  # number of batches
     assert mlc < nc, 'Label class %g exceeds nc=%g in %s. Possible class labels are 0-%g' % (mlc, nc, opt.data, nc - 1)
 
     # Process 0
     if rank in [-1, 0]:
+        if opt.multi_frame > 1:
+            multi_test_path = stack_images(test_path, opt.multi_frame)
+            test_path = multi_test_path
         if opt.tiles > 0:
             tiled_test_path = tile_images_labels(test_path, opt.tiles)
             test_path = tiled_test_path
-            imgsz = int(imgsz_test/opt.tiles)
+            imgsz_test = int(imgsz_test/opt.tiles)
         if opt.no_class<100:
             filt_test_path = filter_no_class(test_path, opt.no_class/100)
             test_path = filt_test_path
@@ -409,7 +415,7 @@ def train(hyp, opt, device, tb_writer=None):
                 pbar.set_description(s)
 
                 # Plot
-                if plots and ni < 10:
+                if plots: # and ni < 10:
                     f = save_dir / f'train_batch{ni}.jpg'  # filename
                     Thread(target=plot_images, args=(imgs, targets, paths, f, opt.four_channels, opt.multi_frame), daemon=True).start()
                     # if tb_writer:
@@ -550,6 +556,9 @@ def train(hyp, opt, device, tb_writer=None):
     if opt.tiles > 0:
         shutil.rmtree('/'.join(tiled_train_path.split('/')[:-1]))
         shutil.rmtree('/'.join(tiled_test_path.split('/')[:-1]))
+    if opt.multi_frame > 1:
+        shutil.rmtree('/'.join(multi_train_path.split('/')[:-1]))
+        shutil.rmtree('/'.join(multi_test_path.split('/')[:-1]))
     return results
 
 

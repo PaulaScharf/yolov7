@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 from shapely.geometry import Polygon
 
-img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo']  # acceptable image suffixes
+img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo', 'npy']  # acceptable image suffixes
 
 def tile_images_labels(path, tiles):
     try:
@@ -41,11 +41,15 @@ def tile_images_labels(path, tiles):
         os.makedirs(new_path + "/images")
         os.makedirs(new_path + "/labels")
     elif len(os.listdir(new_path)) > 0:
-        raise Exception("Tiling folder should be empty")
+        # raise Exception("Tiling folder should be empty")
+        return new_path + "/images"
 
     for imname in img_files:
-        im = Image.open(imname)
-        imr = np.array(im, dtype=np.uint8)
+        if imname.endswith('.npy'):
+            imr = np.load(imname)
+        else:
+            im = Image.open(imname)
+            imr = np.array(im, dtype=np.uint8)
         height = imr.shape[0]
         width = imr.shape[1]
         labname = '/'.join(path.split('/')[:-1]) + '/labels/' + imname.split('/')[-1].split('.')[0] + '.txt'
@@ -81,12 +85,15 @@ def tile_images_labels(path, tiles):
 
 
                 sliced = imr[i*(height//tiles):(i+1)*(height//tiles), j*(width//tiles):(j+1)*(width//tiles)]
-                sliced_im = Image.fromarray(sliced)
                 filename = imname.split('/')[-1]
-                slice_path = new_path + f'/images/{i}_{j}_' + filename.split('/')[-1].split('.')[0] + '.' + filename.split('.')[-1]                           
+                slice_path = new_path + f'/images/{i}_{j}_' + filename.split('/')[-1].split('.')[0]                           
                 slice_labels_path = new_path + f'/labels/{i}_{j}_' + filename.split('/')[-1].split('.')[0] + '.txt'                          
                 # print(slice_path)
-                sliced_im.save(slice_path)
+                if filename.split('.')[-1] == 'npy':
+                    np.save(slice_path,sliced)
+                else:
+                    sliced_im = Image.fromarray(sliced)
+                    sliced_im.save(slice_path + '.' + filename.split('.')[-1])
 
                 for box in boxes:
                     if pol.intersects(box[1]):
