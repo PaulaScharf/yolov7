@@ -415,7 +415,7 @@ def train(hyp, opt, device, tb_writer=None):
                 pbar.set_description(s)
 
                 # Plot
-                if plots: # and ni < 10:
+                if plots and ni < 60:
                     f = save_dir / f'train_batch{ni}.jpg'  # filename
                     Thread(target=plot_images, args=(imgs, targets, paths, f, opt.four_channels, opt.multi_frame), daemon=True).start()
                     # if tb_writer:
