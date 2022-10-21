@@ -13,7 +13,8 @@ def filter_no_class(path, max_perc):
         os.makedirs(new_path + "/images")
         os.makedirs(new_path + "/labels")
     elif len(os.listdir(new_path)) > 0:
-        raise Exception("Filtered folder should be empty")
+        # raise Exception("Filtered folder should be empty")
+        return new_path + "/images"
     
     labels_path = '/'.join(path.split('/')[:-1]) + '/labels/'
     labels_files = os.listdir(labels_path)
