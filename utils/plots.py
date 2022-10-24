@@ -143,9 +143,9 @@ def plot_images(images, targets, paths=None, fname='images.jpg', four_ch=False, 
         
         if multi_frame > 1:
             if four_ch:
-                img = img[:-(img.shape[0]-4),:,:]
+                img = img[(img.shape[0]-4):,:,:]
             else:
-                img = img[:-(img.shape[0]-3),:,:]
+                img = img[(img.shape[0]-3):,:,:]
         block_x = int(w * (i // ns))
         block_y = int(h * (i % ns))
 
