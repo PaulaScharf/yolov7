@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from PIL import Image
 from shapely.geometry import Polygon
+import cv2
 
 img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo']  # acceptable image suffixes
 
