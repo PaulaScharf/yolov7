@@ -44,8 +44,7 @@ def tile_images_labels(path, tiles):
         raise Exception("Tiling folder should be empty")
 
     for imname in img_files:
-        im = Image.open(imname)
-        imr = np.array(im, dtype=np.uint8)
+        imr = cv2.imread(imname, cv2.IMREAD_UNCHANGED)
         height = imr.shape[0]
         width = imr.shape[1]
         labname = '/'.join(path.split('/')[:-1]) + '/labels/' + imname.split('/')[-1].split('.')[0] + '.txt'
