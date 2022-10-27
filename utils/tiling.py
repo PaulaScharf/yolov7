@@ -42,7 +42,8 @@ def tile_images_labels(path, tiles):
         os.makedirs(new_path + "/images")
         os.makedirs(new_path + "/labels")
     elif len(os.listdir(new_path)) > 0:
-        raise Exception("Tiling folder should be empty")
+        # raise Exception("Tiling folder should be empty")
+        return new_path + "/images"
 
     for imname in img_files:
         imr = cv2.imread(imname, cv2.IMREAD_UNCHANGED)
