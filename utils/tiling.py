@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from PIL import Image
 from shapely.geometry import Polygon
+import cv2
 
 img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo', 'npy']  # acceptable image suffixes
 
@@ -47,8 +48,10 @@ def tile_images_labels(path, tiles):
     for imname in img_files:
         if imname.endswith('.npy'):
             imr = np.load(imname)
+        if imname.endswith('.png'):
+            imr = cv2.imread(imname, cv2.IMREAD_UNCHANGED)
         else:
-            im = Image.open(imname)
+            im = Image.open(imname) # TODO: try without stacking!! there is a problem here...
             imr = np.array(im, dtype=np.uint8)
         height = imr.shape[0]
         width = imr.shape[1]

@@ -189,7 +189,7 @@ class LoadImages:  # for inference
         else:
             # Read image
             self.count += 1
-            img0 = cv2.imread(path)  # BGR
+            img0 = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # BGR
             assert img0 is not None, 'Image Not Found ' + path
             #print(f'image {self.count}/{self.nf} {path}: ', end='')
 
@@ -197,7 +197,11 @@ class LoadImages:  # for inference
         img = letterbox(img0, self.img_size, stride=self.stride)[0]
 
         # Convert
-        img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
+        if self.four_ch:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA) # BGRA to RGBA
+            img = img.transpose(2, 0, 1)  # to 3x416x416
+        else:
+            img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
         img = np.ascontiguousarray(img)
 
         return path, img, img0, self.cap
@@ -552,7 +556,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         hyp = self.hyp
         mosaic = self.mosaic and random.random() < hyp['mosaic']
-        if mosaic and False:
+        if mosaic and False: # TODO
             # Load mosaic
             if random.random() < 0.8:
                 img, labels = load_mosaic(self, index)
@@ -603,7 +607,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             #img, labels = self.albumentations(img, labels)
 
             # Augment colorspace
-            augment_hsv(imgs, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
+            imgs = augment_hsv(imgs, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
 
             # Apply cutouts
             # if random.random() < 0.9:
@@ -649,7 +653,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         # Convert
         for i, img in enumerate(imgs):
-            imgs[i] = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
+            if self.four_ch:
+                imgs[i] = cv2.cvtColor(imgs[i], cv2.COLOR_BGRA2RGBA) # BGRA to RGBA
+                imgs[i] = imgs[i].transpose(2, 0, 1)  # to 3x416x416
+            else:
+                imgs[i] = imgs[i][:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
             imgs[i] = np.ascontiguousarray(imgs[i])
 
         final_img = []
@@ -703,7 +711,7 @@ def load_image(self, index):
         if path.endswith('.npy'):
             img = np.load(path)
         else:
-            img = cv2.imread(path)  # BGR
+            img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # BGR
         assert img is not None, 'Image Not Found ' + path
         h0, w0 = img.shape[:2]  # orig hw
         r = self.img_size / max(h0, w0)  # resize image to img_size
@@ -717,19 +725,36 @@ def load_image(self, index):
         return self.imgs[index], self.img_hw0[index], self.img_hw[index], ''  # img, hw_original, hw_resized
 
 
-def augment_hsv(imgs, hgain=0.5, sgain=0.5, vgain=0.5):
+def augment_hsv(imgs, hgain=0.5, sgain=0.5, vgain=0.5, four_ch=False):
     r = np.random.uniform(-1, 1, 3) * [hgain, sgain, vgain] + 1  # random gains
     for i, img in enumerate(imgs):
-        hue, sat, val = cv2.split(cv2.cvtColor(img, cv2.COLOR_BGR2HSV))
-        dtype = img.dtype  # uint8
+        if four_ch: # TODO: do both with return
+            _,_,_, alpha = cv2.split(img)
+            imgs[i] = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            hue, sat, val = cv2.split(cv2.cvtColor(img, cv2.COLOR_BGR2HSV))
+            dtype = img.dtype  # uint8
 
-        x = np.arange(0, 256, dtype=np.int16)
-        lut_hue = ((x * r[0]) % 180).astype(dtype)
-        lut_sat = np.clip(x * r[1], 0, 255).astype(dtype)
-        lut_val = np.clip(x * r[2], 0, 255).astype(dtype)
+            x = np.arange(0, 256, dtype=np.int16)
+            lut_hue = ((x * r[0]) % 180).astype(dtype)
+            lut_sat = np.clip(x * r[1], 0, 255).astype(dtype)
+            lut_val = np.clip(x * r[2], 0, 255).astype(dtype)
 
-        img_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val))).astype(dtype)
-        cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=imgs[i])  # no return needed
+            img_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val))).astype(dtype)
+            imgs[i] = cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR)
+            imgs[i] = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)  # no return needed
+            imgs[i][:, :, 3] = alpha
+        else:
+            hue, sat, val = cv2.split(cv2.cvtColor(img, cv2.COLOR_BGR2HSV))
+            dtype = img.dtype  # uint8
+
+            x = np.arange(0, 256, dtype=np.int16)
+            lut_hue = ((x * r[0]) % 180).astype(dtype)
+            lut_sat = np.clip(x * r[1], 0, 255).astype(dtype)
+            lut_val = np.clip(x * r[2], 0, 255).astype(dtype)
+
+            img_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val))).astype(dtype)
+            cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=imgs[i])  # no return needed
+    return imgs
 
 
 def hist_equalize(img, clahe=True, bgr=False):

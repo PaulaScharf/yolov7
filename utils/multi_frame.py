@@ -51,7 +51,7 @@ def stack_images(path, multi_frame):
             index = index + multi_frame - 1
             final_img = []
             for i in range(multi_frame):
-                imr = cv2.imread(img_files[index-i])
+                imr = cv2.imread(img_files[index-i], cv2.IMREAD_UNCHANGED)
                 # im = Image.open(img_files[index-i])
                 # imr = np.array(im, dtype=np.uint8)
                 if final_img == []:

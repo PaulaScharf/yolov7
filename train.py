@@ -282,7 +282,7 @@ def train(hyp, opt, device, tb_writer=None):
         testloader = create_dataloader(test_path, imgsz_test, batch_size * 2, gs, opt,  # testloader
                                        hyp=hyp, cache=opt.cache_images and not opt.notest, rect=True, rank=-1,
                                        world_size=opt.world_size, workers=opt.workers,
-                                       pad=0.5, prefix=colorstr('val: '), multi_frame = opt.multi_frame, tiles=opt.tiles)[0]
+                                       pad=0.5, prefix=colorstr('val: '), multi_frame = opt.multi_frame, tiles=opt.tiles, four_ch=opt.four_channels)[0]
 
         if not opt.resume:
             labels = np.concatenate(dataset.labels, 0)
@@ -416,14 +416,14 @@ def train(hyp, opt, device, tb_writer=None):
 
                 # Plot
                 if plots and ni < 60:
-                    f = save_dir / f'train_batch{ni}.jpg'  # filename
+                    f = save_dir / f'train_batch{ni}.png'  # filename
                     Thread(target=plot_images, args=(imgs, targets, paths, f, opt.four_channels, opt.multi_frame), daemon=True).start()
                     # if tb_writer:
                     #     tb_writer.add_image(f, result, dataformats='HWC', global_step=epoch)
                     #     tb_writer.add_graph(torch.jit.trace(model, imgs, strict=False), [])  # add model graph
                 elif plots and ni == 10 and wandb_logger.wandb:
                     wandb_logger.log({"Mosaics": [wandb_logger.wandb.Image(str(x), caption=x.name) for x in
-                                                  save_dir.glob('train*.jpg') if x.exists()]})
+                                                  save_dir.glob('train*.png') if x.exists()]})
 
             # end batch ------------------------------------------------------------------------------------------------
         # end epoch ----------------------------------------------------------------------------------------------------
