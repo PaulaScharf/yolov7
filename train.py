@@ -245,9 +245,9 @@ def train(hyp, opt, device, tb_writer=None):
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
         logger.info('Using SyncBatchNorm()')
 
-    if opt.multi_frame > 1:
-        multi_train_path = stack_images(train_path, opt.multi_frame)
-        train_path = multi_train_path
+    # if opt.multi_frame > 1:
+        # multi_train_path = stack_images(train_path, opt.multi_frame)
+        # train_path = multi_train_path
     if opt.tiles > 0:
         tiled_train_path = tile_images_labels(train_path, opt.tiles)
         train_path = tiled_train_path
@@ -268,9 +268,9 @@ def train(hyp, opt, device, tb_writer=None):
 
     # Process 0
     if rank in [-1, 0]:
-        if opt.multi_frame > 1:
-            multi_test_path = stack_images(test_path, opt.multi_frame)
-            test_path = multi_test_path
+        # if opt.multi_frame > 1:
+            # multi_test_path = stack_images(test_path, opt.multi_frame)
+            # test_path = multi_test_path
         if opt.tiles > 0:
             tiled_test_path = tile_images_labels(test_path, opt.tiles)
             test_path = tiled_test_path
@@ -556,9 +556,9 @@ def train(hyp, opt, device, tb_writer=None):
     if opt.tiles > 0:
         shutil.rmtree('/'.join(tiled_train_path.split('/')[:-1]))
         shutil.rmtree('/'.join(tiled_test_path.split('/')[:-1]))
-    if opt.multi_frame > 1:
-        shutil.rmtree('/'.join(multi_train_path.split('/')[:-1]))
-        shutil.rmtree('/'.join(multi_test_path.split('/')[:-1]))
+    # if opt.multi_frame > 1:
+    #     shutil.rmtree('/'.join(multi_train_path.split('/')[:-1]))
+    #     shutil.rmtree('/'.join(multi_test_path.split('/')[:-1]))
     return results
 
 
