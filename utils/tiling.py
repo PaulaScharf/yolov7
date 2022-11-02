@@ -48,7 +48,7 @@ def tile_images_labels(path, tiles):
     for imname in img_files:
         if imname.endswith('.npy'):
             imr = np.load(imname)
-        if imname.endswith('.png'):
+        elif imname.endswith('.png'):
             imr = cv2.imread(imname, cv2.IMREAD_UNCHANGED)
         else:
             im = Image.open(imname) # TODO: try without stacking!! there is a problem here...
