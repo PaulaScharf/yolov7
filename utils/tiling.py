@@ -6,10 +6,12 @@ import numpy as np
 from PIL import Image
 from shapely.geometry import Polygon
 import cv2
+from tqdm import tqdm
 
 img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo', 'npy']  # acceptable image suffixes
 
 def tile_images_labels(path, tiles):
+    print('[INFO] Number of tiles: ' + str(tiles*tiles))
     try:
         f = []  # image files
         for p in path if isinstance(path, list) else [path]:
@@ -45,7 +47,12 @@ def tile_images_labels(path, tiles):
         # raise Exception("Tiling folder should be empty")
         return new_path + "/images"
 
-    for imname in img_files:
+    print('[INFO] Tiling...')
+
+    pbar = enumerate(img_files)
+    pbar = tqdm(pbar, total=len(img_files))  # progress bar
+
+    for _, imname in pbar:
         if imname.endswith('.npy'):
             imr = np.load(imname)
         elif imname.endswith('.png'):

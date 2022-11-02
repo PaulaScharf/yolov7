@@ -1,10 +1,12 @@
 import os
 import random
 import shutil
+from tqdm import tqdm
 
 img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo', '.npy']  # acceptable image suffixes
 
 def filter_no_class(path, max_perc):
+    print('[INFO] maximum percentage of images without detections: ' + str(max_perc))
     new_path = path.split('/')[:-1]
     new_path.append(path.split('/')[-1] + "_filtered")
     new_path = '/'.join(new_path)
@@ -25,7 +27,11 @@ def filter_no_class(path, max_perc):
     applied_perc = not_empty_labels/((empty_labels/max_perc)-empty_labels)
 
     if applied_perc <= 1.0:
-        for name in os.listdir(path):
+        print('[INFO] Filtering...')
+        pbar = enumerate(os.listdir(path))
+        pbar = tqdm(pbar, total=len(os.listdir(path)))  # progress bar
+
+        for _, name in pbar:
             label_path = os.path.join(labels_path, name[:-4] + ".txt")
             img_path = os.path.join(path, name)
             if os.path.isfile(label_path):
