@@ -1,5 +1,5 @@
-lr0: 0.02  # initial learning rate (SGD=1E-2, Adam=1E-3)
-lrf: 0.2  # final OneCycleLR learning rate (lr0 * lrf)
+lr0: 0.001  # initial learning rate (SGD=1E-2, Adam=1E-3)
+lrf: 0.01  # final OneCycleLR learning rate (lr0 * lrf)
 # linear: lrf starts at 1 and ends at specified value
 # cycle: same as linear but as a cos curve. starts at 1 and ends at specified value
 momentum: 0.937  # SGD momentum/Adam beta1
