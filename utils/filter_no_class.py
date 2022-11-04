@@ -16,6 +16,7 @@ def filter_no_class(path, max_perc):
         os.makedirs(new_path + "/labels")
     elif len(os.listdir(new_path)) > 0:
         # raise Exception("Filtered folder should be empty")
+        print('[INFO] reuse existing filtered images')
         return new_path + "/images"
     
     labels_path = '/'.join(path.split('/')[:-1]) + '/labels/'
@@ -24,7 +25,7 @@ def filter_no_class(path, max_perc):
     empty_labels = len([name for name in labels_files if os.path.isfile(labels_path + name) and os.stat(labels_path + name).st_size == 0])
     not_empty_labels = total_labels - empty_labels
 
-    applied_perc = not_empty_labels/((empty_labels/max_perc)-empty_labels)
+    applied_perc = not_empty_labels/((empty_labels/max_perc)-empty_labels) if max_perc > 0 else max_perc
 
     if applied_perc <= 1.0:
         removed = 0

@@ -45,9 +45,11 @@ def tile_images_labels(path, tiles):
         os.makedirs(new_path + "/labels")
     elif len(os.listdir(new_path)) > 0:
         # raise Exception("Tiling folder should be empty")
+        print('[INFO] reuse existing tiles')
         return new_path + "/images"
 
-    sliced_insects = 0
+    sliced_bbox = 0
+    sliced_bbox_removed = 0
 
     print('[INFO] Tiling...')
 
@@ -115,31 +117,34 @@ def tile_images_labels(path, tiles):
                         new_box = inter.envelope 
 
                         if new_box != box[1]:
-                            sliced_insects += 1
-                        
-                        # get central point for the new bounding box 
-                        centre = new_box.centroid
-                        
-                        # get coordinates of polygon vertices
-                        x, y = new_box.exterior.coords.xy
-                        
-                        # get bounding box width and height normalized to slice size
-                        new_width = (max(x) - min(x)) / (width/tiles)
-                        new_height = (max(y) - min(y)) / (height/tiles)
-                        
-                        # we have to normalize central x and invert y for yolo format
-                        new_x = (centre.coords.xy[0][0] - x1) / (width/tiles)
-                        new_y = (y1 - centre.coords.xy[1][0]) / (height/tiles)
-                        
-                        counter += 1
+                            sliced_bbox += 1
+                        if new_box.area/box[1].area > 0.3:
+                            # get central point for the new bounding box 
+                            centre = new_box.centroid
+                            
+                            # get coordinates of polygon vertices
+                            x, y = new_box.exterior.coords.xy
+                            
+                            # get bounding box width and height normalized to slice size
+                            new_width = (max(x) - min(x)) / (width/tiles)
+                            new_height = (max(y) - min(y)) / (height/tiles)
+                            
+                            # we have to normalize central x and invert y for yolo format
+                            new_x = (centre.coords.xy[0][0] - x1) / (width/tiles)
+                            new_y = (y1 - centre.coords.xy[1][0]) / (height/tiles)
+                            
+                            counter += 1
 
-                        slice_labels.append([box[0], new_x, new_y, new_width, new_height])
+                            slice_labels.append([box[0], new_x, new_y, new_width, new_height])
+                        else:
+                            sliced_bbox_removed += 1
             
                 slice_df = pd.DataFrame(slice_labels, columns=['class', 'x1', 'y1', 'w', 'h'])
                 # print(slice_df)
                 slice_df.to_csv(slice_labels_path, sep=' ', index=False, header=False, float_format='%.6f')
                 
-    print('[INFO] sliced ' + str(int(sliced_insects/2)) + ' insects in half')
+    print('[INFO] sliced ' + str(int(sliced_bbox/2)) + ' bounding boxes in half')
+    print('[INFO] removed ' + str(sliced_bbox_removed) + ' of the sliced bounding boxes')
     return new_path + "/images"
 
 def img2label_paths(img_paths):
