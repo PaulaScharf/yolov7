@@ -27,6 +27,8 @@ def filter_no_class(path, max_perc):
     applied_perc = not_empty_labels/((empty_labels/max_perc)-empty_labels)
 
     if applied_perc <= 1.0:
+        removed = 0
+        kept = 0
         print('[INFO] Filtering...')
         pbar = enumerate(os.listdir(path))
         pbar = tqdm(pbar, total=len(os.listdir(path)))  # progress bar
@@ -38,12 +40,17 @@ def filter_no_class(path, max_perc):
                 random_perc = random.randint(0,10000000)/10000000
                 if random_perc <= applied_perc or os.stat(label_path).st_size > 0:
                     shutil.copy(label_path, new_path + '/labels/')
-                    shutil.copy(img_path, new_path + '/images/')  
+                    shutil.copy(img_path, new_path + '/images/')
+                    kept += 1
+                else:
+                    removed += 1 
         
+        print('[INFO] removed ' + str(removed) + ' images')
+        print('[INFO] kept ' + str(kept) + ' images')
+
         total_labels = len([name for name in os.listdir(new_path + '/labels/') if os.path.isfile(new_path + '/labels/' + name)])
         empty_labels = len([name for name in os.listdir(new_path + '/labels/') if os.path.isfile(new_path + '/labels/' + name) and os.stat(new_path + '/labels/' + name).st_size == 0])
-
-        print(empty_labels/total_labels)
+        print('[INFO] resulting percentage of images without classes: ' + str(empty_labels/total_labels))
         return new_path + '/images/'
     else:
         return path

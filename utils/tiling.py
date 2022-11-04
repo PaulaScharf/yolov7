@@ -47,6 +47,8 @@ def tile_images_labels(path, tiles):
         # raise Exception("Tiling folder should be empty")
         return new_path + "/images"
 
+    sliced_insects = 0
+
     print('[INFO] Tiling...')
 
     pbar = enumerate(img_files)
@@ -107,10 +109,13 @@ def tile_images_labels(path, tiles):
 
                 for box in boxes:
                     if pol.intersects(box[1]):
-                        inter = pol.intersection(box[1])                  
-                        
+                        inter = pol.intersection(box[1])   
+
                         # get smallest rectangular polygon (with sides parallel to the coordinate axes) that contains the intersection
                         new_box = inter.envelope 
+
+                        if new_box != box[1]:
+                            sliced_insects += 1
                         
                         # get central point for the new bounding box 
                         centre = new_box.centroid
@@ -134,6 +139,7 @@ def tile_images_labels(path, tiles):
                 # print(slice_df)
                 slice_df.to_csv(slice_labels_path, sep=' ', index=False, header=False, float_format='%.6f')
                 
+    print('[INFO] sliced ' + str(int(sliced_insects/2)) + ' insects in half')
     return new_path + "/images"
 
 def img2label_paths(img_paths):
