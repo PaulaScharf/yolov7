@@ -550,12 +550,12 @@ def train(hyp, opt, device, tb_writer=None):
     else:
         dist.destroy_process_group()
     torch.cuda.empty_cache()
-    if opt.no_class < 100:
-        shutil.rmtree('/'.join(filt_train_path.split('/')[:-1]))
-        shutil.rmtree('/'.join(filt_test_path.split('/')[:-1]))
-    if opt.tiles > 0:
-        shutil.rmtree('/'.join(tiled_train_path.split('/')[:-1]))
-        shutil.rmtree('/'.join(tiled_test_path.split('/')[:-1]))
+    # if opt.no_class < 100:
+    #     shutil.rmtree('/'.join(filt_train_path.split('/')[:-1]))
+    #     shutil.rmtree('/'.join(filt_test_path.split('/')[:-1]))
+    # if opt.tiles > 0:
+    #     shutil.rmtree('/'.join(tiled_train_path.split('/')[:-1]))
+    #     shutil.rmtree('/'.join(tiled_test_path.split('/')[:-1]))
     # if opt.multi_frame > 1:
     #     shutil.rmtree('/'.join(multi_train_path.split('/')[:-1]))
     #     shutil.rmtree('/'.join(multi_test_path.split('/')[:-1]))
