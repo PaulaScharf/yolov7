@@ -54,6 +54,9 @@ def train(hyp, opt, device, tb_writer=None):
     best = wdir / 'best.pt'
     results_file = save_dir / 'results.txt'
 
+    with open(results_file, 'a') as f:
+        f.write('       epoch   ram     _           _             _     _             _       size p          r       map50     map95     f1       _          _             _' + '\n')
+
     # Save run settings
     with open(save_dir / 'hyp.yaml', 'w') as f:
         yaml.dump(hyp, f, sort_keys=False)
@@ -457,7 +460,7 @@ def train(hyp, opt, device, tb_writer=None):
 
             # Write
             with open(results_file, 'a') as f:
-                f.write(s + '%10.4g' * 7 % results + '\n')  # append metrics, val_loss
+                f.write(s + '%10.4g' * 8 % results + '\n')  # append metrics, val_loss
             if len(opt.name) and opt.bucket:
                 os.system('gsutil cp %s gs://%s/results/results%s.txt' % (results_file, opt.bucket, opt.name))
 
