@@ -144,10 +144,8 @@ def tile_images_labels(path, tiles):
                         else:
                             sliced_bbox_removed += 1
             
-                print(slice_labels)
                 total_sliced_bbox_kept += len(slice_labels)
                 slice_df = pd.DataFrame(slice_labels, columns=['class', 'x1', 'y1', 'w', 'h'])
-                # print(slice_df)
                 slice_df.to_csv(slice_labels_path, sep=' ', index=False, header=False, float_format='%.6f')
     print('[INFO] total amount of bboxes before: ' + str(total_bbox))    
     print('[INFO] sliced ' + str(int(sliced_bbox/2)) + ' bounding boxes in half')
