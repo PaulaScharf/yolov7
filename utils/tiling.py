@@ -11,7 +11,7 @@ from tqdm import tqdm
 img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo', 'npy']  # acceptable image suffixes
 
 def tile_images_labels(path, tiles):
-    print('[INFO] Number of tiles: ' + str(tiles*tiles))
+    print('[INFO] Number of tiles per image: ' + str(tiles*tiles))
     try:
         f = []  # image files
         for p in path if isinstance(path, list) else [path]:
@@ -48,8 +48,11 @@ def tile_images_labels(path, tiles):
         print('[INFO] reuse existing tiles')
         return new_path + "/images"
 
+    total_bbox = 0
+    total_sliced_bbox = 0
     sliced_bbox = 0
     sliced_bbox_removed = 0
+    total_sliced_bbox_kept = 0
 
     print('[INFO] Tiling...')
 
@@ -83,7 +86,8 @@ def tile_images_labels(path, tiles):
             y2 = (height - row[1]['y1']) + row[1]['h']/2
 
             boxes.append((int(row[1]['class']), Polygon([(x1, y1), (x2, y1), (x2, y2), (x1, y2)])))
-        
+        total_bbox += len(boxes)
+
         counter = 0
         # print('Image:', imname)
         # create tiles and find intersection with bounding boxes for each tile
@@ -111,6 +115,7 @@ def tile_images_labels(path, tiles):
 
                 for box in boxes:
                     if pol.intersects(box[1]):
+                        total_sliced_bbox += 1
                         inter = pol.intersection(box[1])   
 
                         # get smallest rectangular polygon (with sides parallel to the coordinate axes) that contains the intersection
@@ -139,12 +144,16 @@ def tile_images_labels(path, tiles):
                         else:
                             sliced_bbox_removed += 1
             
+                print(slice_labels)
+                total_sliced_bbox_kept += len(slice_labels)
                 slice_df = pd.DataFrame(slice_labels, columns=['class', 'x1', 'y1', 'w', 'h'])
                 # print(slice_df)
                 slice_df.to_csv(slice_labels_path, sep=' ', index=False, header=False, float_format='%.6f')
-                
+    print('[INFO] total amount of bboxes before: ' + str(total_bbox))    
     print('[INFO] sliced ' + str(int(sliced_bbox/2)) + ' bounding boxes in half')
+    print('[INFO] total amount of bboxes after slicing: ' + str(total_sliced_bbox)) 
     print('[INFO] removed ' + str(sliced_bbox_removed) + ' of the sliced bounding boxes')
+    print('[INFO] total amount of bboxes after removing: ' + str(total_sliced_bbox_kept)) 
     return new_path + "/images"
 
 def img2label_paths(img_paths):
