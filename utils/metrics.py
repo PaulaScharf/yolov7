@@ -76,7 +76,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, v5_metric=False, plot=False, sa
 
     i = f1.mean(0).argmax()  # max F1 index
     j = r.mean(0).argmax()  # max r index
-    print('f1 is ' + str(i) + ' while r is ' + str(j) + '. the max value of r is ' + str(r[j]))
+    print('f1 is ' + str(i) + ' while r is ' + str(j) + '. The max value of r is ' + str(r.mean(0)[j]) + ' but best f1 of r is ' + str(r.mean(0)[i]))
     return p[:, i], r[:, i], ap, f1[:, i], unique_classes.astype('int32')
 
 
