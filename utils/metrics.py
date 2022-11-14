@@ -191,8 +191,16 @@ class ConfusionMatrix:
 
 def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=()):
     # Precision-recall curve
-    fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
     py = np.stack(py, axis=1)
+
+    text_dir = save_dir.with_suffix('.txt')
+    format_string = "{:<10}{:<10}{:<10}"
+    with open(text_dir, 'w') as f:
+        f.write(format_string.format('conf', 'prec', 'reca') + '\n')
+        for i, entry in enumerate(px):
+            f.write(format_string.format(round(i/px.size, 6), round(entry, 6), round(py[i][0], 6)) + '\n')
+
+    fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
 
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
         for i, y in enumerate(py.T):
@@ -211,6 +219,15 @@ def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=()):
 
 def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence', ylabel='Metric'):
     # Metric-confidence curve
+    y = py.mean(0)
+
+    text_dir = save_dir.with_suffix('.txt')
+    format_string = "{:<10}{:<10}"
+    with open(text_dir, 'w') as f:
+        f.write(format_string.format('conf', ylabel) + '\n')
+        for i, entry in enumerate(px):
+            f.write(format_string.format(round(entry, 3), round(y[i], 6)) + '\n')
+
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
 
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
@@ -219,7 +236,6 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
     else:
         ax.plot(px, py.T, linewidth=1, color='grey')  # plot(confidence, metric)
 
-    y = py.mean(0)
     ax.plot(px, y, linewidth=3, color='blue', label=f'all classes {y.max():.2f} at {px[y.argmax()]:.3f}')
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
