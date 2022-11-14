@@ -11,10 +11,12 @@ from tqdm import tqdm
 
 from models.experimental import attempt_load
 from utils.datasets import create_dataloader
+from utils.filter_no_class import filter_no_class
 from utils.general import coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
     box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
+from utils.tiling import tile_images_labels
 from utils.torch_utils import select_device, time_synchronized, TracedModel
 
 
@@ -56,13 +58,16 @@ def test(data,
         save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
+        if opt.tiles > 0:
+            imgsz = int(imgsz/opt.tiles)
+
         # Load model
         model = attempt_load(weights, map_location=device)  # load FP32 model
         gs = max(int(model.stride.max()), 32)  # grid size (max stride)
         imgsz = check_img_size(imgsz, s=gs)  # check img_size
         
         if trace:
-            model = TracedModel(model, device, imgsz)
+            model = TracedModel(model, device, imgsz, multi_frame=multi_frame, four_channels=four_ch)
 
     # Half
     half = device.type != 'cpu' and half_precision  # half precision only supported on CUDA
@@ -87,10 +92,13 @@ def test(data,
     # Dataloader
     if not training:
         if device.type != 'cpu':
-            model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
+            layers = multi_frame*(4 if four_ch else 3)
+            model(torch.zeros(1, layers, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
         task = opt.task if opt.task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
+        if opt.tiles > 0:
+            data[task] = tile_images_labels(data[task], opt.tiles)
         dataloader = create_dataloader(data[task], imgsz, batch_size, gs, opt, pad=0.5, rect=True,
-                                       prefix=colorstr(f'{task}: '))[0]
+                                       prefix=colorstr(f'{task}: '), multi_frame = multi_frame, tiles=opt.tiles, four_ch=four_ch)[0]
 
     if v5_metric:
         print("Testing with YOLOv5 AP metric...")
@@ -214,7 +222,7 @@ def test(data,
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
 
         # Plot images
-        if plots and batch_i < 3:
+        if plots and batch_i < 20:
             f = save_dir / f'test_batch{batch_i}_labels.png'  # labels
             Thread(target=plot_images, args=(img, targets, paths, f, four_ch, multi_frame, names), daemon=True).start()
             f = save_dir / f'test_batch{batch_i}_pred.png'  # predictions
@@ -311,6 +319,9 @@ if __name__ == '__main__':
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--no-trace', action='store_true', help='don`t trace model')
     parser.add_argument('--v5-metric', action='store_true', help='assume maximum recall as 1.0 in AP calculation')
+    parser.add_argument('--tiles', type=int, default=0, help='how many tiles will be created (will be squared)')
+    parser.add_argument('--four-channels', action='store_true', help='accept input images with 4 channels')
+    parser.add_argument('--multi-frame', type=int, default=1, choices=range(1,101), help='how many frames to load at once')
     opt = parser.parse_args()
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.data = check_file(opt.data)  # check file
@@ -332,7 +343,9 @@ if __name__ == '__main__':
              save_hybrid=opt.save_hybrid,
              save_conf=opt.save_conf,
              trace=not opt.no_trace,
-             v5_metric=opt.v5_metric
+             v5_metric=opt.v5_metric,
+             multi_frame=opt.multi_frame,
+             four_ch=opt.four_channels
              )
 
     elif opt.task == 'speed':  # speed benchmarks

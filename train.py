@@ -234,6 +234,28 @@ def train(hyp, opt, device, tb_writer=None):
 
         del ckpt, state_dict
 
+    # if opt.multi_frame > 1:
+        # multi_train_path = stack_images(train_path, opt.multi_frame)
+        # train_path = multi_train_path
+        # multi_test_path = stack_images(test_path, opt.multi_frame)
+        # test_path = multi_test_path
+
+    if opt.tiles > 0:
+        tiled_train_path = tile_images_labels(train_path, opt.tiles)
+        train_path = tiled_train_path
+        imgsz = int(imgsz/opt.tiles)
+
+        tiled_test_path = tile_images_labels(test_path, opt.tiles)
+        test_path = tiled_test_path
+        imgsz_test = int(imgsz_test/opt.tiles)
+
+    if opt.no_class<100:
+        filt_train_path = filter_no_class(train_path, opt.no_class/100)
+        train_path = filt_train_path
+
+        filt_test_path = filter_no_class(test_path, opt.no_class/100)
+        test_path = filt_test_path
+
     # Image sizes
     gs = max(int(model.stride.max()), 32)  # grid size (max stride)
     nl = model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
@@ -248,17 +270,6 @@ def train(hyp, opt, device, tb_writer=None):
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
         logger.info('Using SyncBatchNorm()')
 
-    # if opt.multi_frame > 1:
-        # multi_train_path = stack_images(train_path, opt.multi_frame)
-        # train_path = multi_train_path
-    if opt.tiles > 0:
-        tiled_train_path = tile_images_labels(train_path, opt.tiles)
-        train_path = tiled_train_path
-        imgsz = int(imgsz/opt.tiles)
-    if opt.no_class<100:
-        filt_train_path = filter_no_class(train_path, opt.no_class/100)
-        train_path = filt_train_path
-
     # Trainloader
     dataloader, dataset = create_dataloader(train_path, imgsz, batch_size, gs, opt,
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=rank,
@@ -271,17 +282,6 @@ def train(hyp, opt, device, tb_writer=None):
 
     # Process 0
     if rank in [-1, 0]:
-        # if opt.multi_frame > 1:
-            # multi_test_path = stack_images(test_path, opt.multi_frame)
-            # test_path = multi_test_path
-        if opt.tiles > 0:
-            tiled_test_path = tile_images_labels(test_path, opt.tiles)
-            test_path = tiled_test_path
-            imgsz_test = int(imgsz_test/opt.tiles)
-        if opt.no_class<100:
-            filt_test_path = filter_no_class(test_path, opt.no_class/100)
-            test_path = filt_test_path
-
         testloader = create_dataloader(test_path, imgsz_test, batch_size * 2, gs, opt,  # testloader
                                        hyp=hyp, cache=opt.cache_images and not opt.notest, rect=True, rank=-1,
                                        world_size=opt.world_size, workers=opt.workers,
