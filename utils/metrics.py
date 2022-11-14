@@ -196,7 +196,7 @@ def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=()):
     text_dir = save_dir.with_suffix('.txt')
     format_string = "{:<10}{:<10}{:<10}"
     with open(text_dir, 'w') as f:
-        f.write(format_string.format('conf', 'prec', 'reca') + '\n')
+        f.write(format_string.format('conf', 'recall', 'precis') + '\n')
         for i, entry in enumerate(px):
             f.write(format_string.format(round(i/px.size, 6), round(entry, 6), round(py[i][0], 6)) + '\n')
 
