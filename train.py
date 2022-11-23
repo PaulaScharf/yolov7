@@ -240,6 +240,8 @@ def train(hyp, opt, device, tb_writer=None):
         # multi_test_path = stack_images(test_path, opt.multi_frame)
         # test_path = multi_test_path
 
+    imgsz, imgsz_test = opt.img_size
+
     if opt.tiles > 0:
         tiled_train_path = tile_images_labels(train_path, opt.tiles)
         train_path = tiled_train_path
@@ -259,7 +261,7 @@ def train(hyp, opt, device, tb_writer=None):
     # Image sizes
     gs = max(int(model.stride.max()), 32)  # grid size (max stride)
     nl = model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
-    imgsz, imgsz_test = [check_img_size(x, gs) for x in opt.img_size]  # verify imgsz are gs-multiples
+    imgsz, imgsz_test = [check_img_size(x, gs) for x in [imgsz, imgsz_test]]  # verify imgsz are gs-multiples
 
     # DP mode
     if cuda and rank == -1 and torch.cuda.device_count() > 1:
