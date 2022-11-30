@@ -741,7 +741,7 @@ def load_image(self, index):
         if r != 1:  # always resize down, only resize up if training with augmentation
             interp = cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR
             no_channels = 4 if img.shape[2]%4==0 else 3
-            out_img = np.zeros((int(w0 * r), int(h0 * r), no_channels))
+            out_img = np.zeros((int(h0 * r), int(w0 * r), no_channels))
             for i in range(int(img.shape[2]/no_channels)):
                 out_img[:,:,no_channels*i:no_channels*(i+1)] = cv2.resize(img[:,:,no_channels*i:no_channels*(i+1)], (int(w0 * r), int(h0 * r)), interpolation=interp)
             img = out_img
