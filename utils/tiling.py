@@ -10,6 +10,32 @@ from tqdm import tqdm
 
 img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo', 'npy']  # acceptable image suffixes
 
+def reassemble_image(images, tiles):
+    height = images[0].shape[0]*tiles
+    width = images[0].shape[1]*tiles
+    depth = images[0].shape[2]
+    
+    reass_image = np.zeros((height,width,depth), np.uint8)
+    im_ind = 0
+
+    # create tiles and find intersection with bounding boxes for each tile
+    for i in range(tiles):
+        for j in range(tiles):
+            reass_image[i*(height//tiles):(i+1)*(height//tiles), j*(width//tiles):(j+1)*(width//tiles)] = images[im_ind]
+            im_ind += 1
+    return reass_image
+
+def tile_single_image(image, tiles):
+    height = image.shape[0]
+    width = image.shape[1]
+    
+    sliced_images = []
+    # create tiles and find intersection with bounding boxes for each tile
+    for i in range(tiles):
+        for j in range(tiles):
+            sliced_images.append(image[i*(height//tiles):(i+1)*(height//tiles), j*(width//tiles):(j+1)*(width//tiles)])              
+    return sliced_images
+
 def tile_images_labels(path, tiles):
     print('[INFO] Number of tiles per image: ' + str(tiles*tiles))
     try:

@@ -28,6 +28,7 @@ from torchvision.ops import roi_pool, roi_align, ps_roi_pool, ps_roi_align
 
 from utils.general import check_requirements, xyxy2xywh, xywh2xyxy, xywhn2xyxy, xyn2xy, segment2box, segments2boxes, \
     resample_segments, clean_str
+from utils.tiling import tile_single_image
 from utils.torch_utils import torch_distributed_zero_first
 
 # Parameters
@@ -132,7 +133,7 @@ class _RepeatSampler(object):
 
 
 class LoadImages:  # for inference
-    def __init__(self, path, img_size=640, stride=32):
+    def __init__(self, path, img_size=640, stride=32, tiles=1, four_channels=False, labels=None):
         p = str(Path(path).absolute())  # os-agnostic absolute path
         if '*' in p:
             files = sorted(glob.glob(p, recursive=True))  # glob
@@ -147,12 +148,15 @@ class LoadImages:  # for inference
         videos = [x for x in files if x.split('.')[-1].lower() in vid_formats]
         ni, nv = len(images), len(videos)
 
+        self.label_files = labels
         self.img_size = img_size
         self.stride = stride
         self.files = images + videos
         self.nf = ni + nv  # number of files
         self.video_flag = [False] * ni + [True] * nv
         self.mode = 'image'
+        self.tiles = tiles
+        self.four_ch = four_channels
         if any(videos):
             self.new_video(videos[0])  # new video
         else:
@@ -168,6 +172,11 @@ class LoadImages:  # for inference
         if self.count == self.nf:
             raise StopIteration
         path = self.files[self.count]
+        if self.label_files is not None:
+            name = path.split('/')[-1].split('.')[0]
+            path_label = os.path.join(self.label_files, name + '.txt')
+        else:
+            path_label = None
 
         if self.video_flag[self.count]:
             # Read video
@@ -189,22 +198,36 @@ class LoadImages:  # for inference
         else:
             # Read image
             self.count += 1
-            img0 = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # BGR
+            if path.endswith('.npy'):
+                img0 = np.load(path)
+            elif path.endswith('.png'):
+                img0 = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # BGR
             assert img0 is not None, 'Image Not Found ' + path
+
             #print(f'image {self.count}/{self.nf} {path}: ', end='')
 
+
+        if self.tiles > 1:
+            tiled_img0 = tile_single_image(img0, 6)
+        else:
+            tiled_img0 =[img0]
         # Padded resize
-        img = letterbox(img0, self.img_size, stride=self.stride)[0]
+        img_tiled = []
+        for img0 in tiled_img0:
+            img_tiled.append(letterbox(img0, self.img_size, stride=self.stride)[0])
 
         # Convert
         if self.four_ch:
-            img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA) # BGRA to RGBA
-            img = img.transpose(2, 0, 1)  # to 3x416x416
+            for i, img in enumerate(img_tiled):
+                img_tiled[i] = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA) # BGRA to RGBA
+                img_tiled[i] = img_tiled[i].transpose(2, 0, 1)  # to 3x416x416
+                img_tiled[i] = np.ascontiguousarray(img_tiled[i])
         else:
-            img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
-        img = np.ascontiguousarray(img)
+            for i, img in enumerate(img_tiled):
+                img_tiled[i] = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
+                img_tiled[i] = np.ascontiguousarray(img_tiled[i])
 
-        return path, img, img0, self.cap
+        return path, img_tiled, tiled_img0, self.cap, path_label
 
     def new_video(self, path):
         self.frame = 0
