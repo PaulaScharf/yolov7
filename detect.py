@@ -63,7 +63,7 @@ def detect(save_img=False):
     imgsz = int(imgsz/tiles)
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
-    colors = [[random.randint(0, 255) for _ in range(layers)] for _ in names]
+    colors = [(50,80,255,200) if four_ch else (50,80,255) for _ in names]
 
     # Run inference
     if device.type != 'cpu':
@@ -151,7 +151,7 @@ def detect(save_img=False):
                     x_org = int(float(line_arr[2])*img_shape[0])
                     height = int((float(line_arr[3])*img_shape[1])/2)
                     width = int((float(line_arr[4])*img_shape[0])/2)
-                    im0[:,:,0:layers] = cv2.rectangle(im0[:,:,0:layers].copy(),(y_org-height,x_org-width), (y_org+height,x_org+width),((200,200,200,200) if four_ch else (200,200,200)),3)
+                    im0[:,:,0:layers] = cv2.rectangle(im0[:,:,0:layers].copy(),(y_org-height,x_org-width), (y_org+height,x_org+width),((255,80,50,200) if four_ch else (255,80,50)),4)
         # Stream results
         if view_img:
             (h, w) = im0.shape[:2]

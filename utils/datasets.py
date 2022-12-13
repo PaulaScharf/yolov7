@@ -576,25 +576,28 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         index = self.indices[index]  # linear, shuffled, or image_weights
         # if self.tiles > 0:
         #     index = int((index+(self.multi_frame-1)) / self.tiles)
+        no_channels = 4 if self.four_ch else 3
 
         hyp = self.hyp
         mosaic = self.mosaic and random.random() < hyp['mosaic']
-        if mosaic and False: # TODO
+        if mosaic and False:
+            imgs = []
             # Load mosaic
             if random.random() < 0.8:
-                img, labels = load_mosaic(self, index)
+                imgs, labels = load_mosaic(self, index, no_channels)
             else:
-                img, labels = load_mosaic9(self, index)
+                imgs, labels = load_mosaic9(self, index, no_channels)
             shapes = None
 
             # MixUp https://arxiv.org/pdf/1710.09412.pdf
             if random.random() < hyp['mixup']:
                 if random.random() < 0.8:
-                    img2, labels2 = load_mosaic(self, random.randint(0, len(self.labels) - 1))
+                    imgs2, labels2 = load_mosaic(self, random.randint(0, len(self.labels) - 1), no_channels)
                 else:
-                    img2, labels2 = load_mosaic9(self, random.randint(0, len(self.labels) - 1))
+                    imgs2, labels2 = load_mosaic9(self, random.randint(0, len(self.labels) - 1), no_channels)
                 r = np.random.beta(8.0, 8.0)  # mixup ratio, alpha=beta=8.0
-                img = (img * r + img2 * (1 - r)).astype(np.uint8)
+                for i, _ in enumerate(imgs):
+                    imgs[i] = (imgs[i] * r + imgs2[i] * (1 - r)).astype(np.uint8)
                 labels = np.concatenate((labels, labels2), 0)
 
         else:
@@ -602,7 +605,6 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             # Load image
             img, (h0, w0), (h, w), _ = load_image(self, index) # TODO: varying image shapes
 
-            no_channels = 4 if self.four_ch else 3
             for i in range(int(img.shape[2]/no_channels)):
                 imgs.append(img[:,:,img.shape[2]-no_channels*(i+1):img.shape[2]-no_channels*i])
             
@@ -741,7 +743,7 @@ def load_image(self, index):
         if r != 1:  # always resize down, only resize up if training with augmentation
             interp = cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR
             no_channels = 4 if img.shape[2]%4==0 else 3
-            out_img = np.zeros((int(h0 * r), int(w0 * r), no_channels), dtype=img.dtype)
+            out_img = np.zeros((int(h0 * r), int(w0 * r), img.shape[2]), dtype=img.dtype)
             for i in range(int(img.shape[2]/no_channels)):
                 out_img[:,:,no_channels*i:no_channels*(i+1)] = cv2.resize(img[:,:,no_channels*i:no_channels*(i+1)], (int(w0 * r), int(h0 * r)), interpolation=interp)
             img = out_img
@@ -793,7 +795,8 @@ def hist_equalize(img, clahe=True, bgr=False):
     return cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR if bgr else cv2.COLOR_YUV2RGB)  # convert YUV image to RGB
 
 
-def load_mosaic(self, index):
+def load_mosaic(self, index, no_channels):
+    imgs4 = []
     # loads images in a 4-mosaic
 
     labels4, segments4 = [], []
@@ -840,8 +843,10 @@ def load_mosaic(self, index):
     # Augment
     #img4, labels4, segments4 = remove_background(img4, labels4, segments4)
     #sample_segments(img4, labels4, segments4, probability=self.hyp['copy_paste'])
-    img4, labels4, segments4 = copy_paste(img4, labels4, segments4, probability=self.hyp['copy_paste'])
-    img4, labels4 = random_perspective(img4, labels4, segments4,
+    for i in range(int(img.shape[2]/no_channels)):
+        imgs4.append(img[:,:,img4.shape[2]-no_channels*(i+1):img4.shape[2]-no_channels*i])
+    imgs4, labels4, segments4 = copy_paste(imgs4, labels4, segments4, probability=self.hyp['copy_paste'], no_channels=no_channels)
+    imgs4, labels4 = random_perspective(imgs4, labels4, segments4,
                                        degrees=self.hyp['degrees'],
                                        translate=self.hyp['translate'],
                                        scale=self.hyp['scale'],
@@ -849,11 +854,12 @@ def load_mosaic(self, index):
                                        perspective=self.hyp['perspective'],
                                        border=self.mosaic_border)  # border to remove
 
-    return img4, labels4
+    return imgs4, labels4
 
 
-def load_mosaic9(self, index):
+def load_mosaic9(self, index, no_channels):
     # loads images in a 9-mosaic
+    imgs9 = []
 
     labels9, segments9 = [], []
     s = self.img_size
@@ -916,8 +922,10 @@ def load_mosaic9(self, index):
 
     # Augment
     #img9, labels9, segments9 = remove_background(img9, labels9, segments9)
-    img9, labels9, segments9 = copy_paste(img9, labels9, segments9, probability=self.hyp['copy_paste'])
-    img9, labels9 = random_perspective(img9, labels9, segments9,
+    for i in range(int(img.shape[2]/no_channels)):
+        imgs9.append(img[:,:,img9.shape[2]-no_channels*(i+1):img9.shape[2]-no_channels*i])
+    imgs9, labels9, segments9 = copy_paste(imgs9, labels9, segments9, probability=self.hyp['copy_paste'], no_channels=no_channels)
+    imgs9, labels9 = random_perspective(imgs9, labels9, segments9,
                                        degrees=self.hyp['degrees'],
                                        translate=self.hyp['translate'],
                                        scale=self.hyp['scale'],
@@ -925,7 +933,7 @@ def load_mosaic9(self, index):
                                        perspective=self.hyp['perspective'],
                                        border=self.mosaic_border)  # border to remove
 
-    return img9, labels9
+    return imgs9, labels9
 
 
 def load_samples(self, index):
@@ -979,12 +987,15 @@ def load_samples(self, index):
     return sample_labels, sample_images, sample_masks
 
 
-def copy_paste(img, labels, segments, probability=0.5):
+# if segmentation masks are given copy paste them into other images
+def copy_paste(imgs, labels, segments, probability=0.5, no_channels = 3):
     # Implement Copy-Paste augmentation https://arxiv.org/abs/2012.07177, labels as nx5 np.array(cls, xyxy)
     n = len(segments)
     if probability and n:
-        h, w, c = img.shape  # height, width, channels
-        im_new = np.zeros(img.shape, np.uint8)
+        h, w, c = imgs[0].shape  # height, width, channels
+        ims_new = []
+        for a in range(0, len(imgs)):
+            ims_new = ims_new.append(np.zeros(imgs[0].shape, np.uint8))
         for j in random.sample(range(n), k=round(probability * n)):
             l, s = labels[j], segments[j]
             box = w - l[3], l[2], w - l[1], l[4]
@@ -992,15 +1003,17 @@ def copy_paste(img, labels, segments, probability=0.5):
             if (ioa < 0.30).all():  # allow 30% obscuration of existing labels
                 labels = np.concatenate((labels, [[l[0], *box]]), 0)
                 segments.append(np.concatenate((w - s[:, 0:1], s[:, 1:2]), 1))
-                cv2.drawContours(im_new, [segments[j].astype(np.int32)], -1, (255, 255, 255), cv2.FILLED)
+                for k in range(0, len(ims_new)):
+                    cv2.drawContours(ims_new[k], [segments[j].astype(np.int32)], -1, (255, 255, 255) if no_channels == 3 else (255, 255, 255, 255), cv2.FILLED)
 
-        result = cv2.bitwise_and(src1=img, src2=im_new)
-        result = cv2.flip(result, 1)  # augment segments (flip left-right)
-        i = result > 0  # pixels to replace
-        # i[:, :] = result.max(2).reshape(h, w, 1)  # act over ch
-        img[i] = result[i]  # cv2.imwrite('debug.jpg', img)  # debug
+        for z in range(0, len(imgs)):
+            result = cv2.bitwise_and(src1=imgs[z], src2=ims_new[z])
+            result = cv2.flip(result, 1)  # augment segments (flip left-right)
+            i = result > 0  # pixels to replace
+            # i[:, :] = result.max(2).reshape(h, w, 1)  # act over ch
+            imgs[z][i] = result[i]  # cv2.imwrite('debug.jpg', img)  # debug
 
-    return img, labels, segments
+    return imgs, labels, segments
 
 
 def remove_background(img, labels, segments):
@@ -1142,11 +1155,11 @@ def random_perspective(imgs, targets=(), segments=(), degrees=10, translate=.1, 
     M = T @ S @ R @ P @ C  # order of operations (right to left) is IMPORTANT
     if (border[0] != 0) or (border[1] != 0) or (M != np.eye(3)).any():  # image changed
         if perspective:
-            for i, img in enumerate(imgs):
-                imgs[i] = cv2.warpPerspective(img, M, dsize=(width, height), borderValue=(114, 114, 114))
+            for i in range(len(imgs)):
+                imgs[i] = cv2.warpPerspective(imgs[i], M, dsize=(width, height), borderValue=(114, 114, 114))
         else:  # affine
-            for i, img in enumerate(imgs):
-                imgs[i] = cv2.warpAffine(img, M[:2], dsize=(width, height), borderValue=(114, 114, 114))
+            for i in range(len(imgs)):
+                imgs[i] = cv2.warpAffine(imgs[i], M[:2], dsize=(width, height), borderValue=(114, 114, 114))
 
     # Visualize
     # import matplotlib.pyplot as plt
