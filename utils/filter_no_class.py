@@ -54,6 +54,7 @@ def filter_no_class(path, max_perc):
         print('[INFO] resulting percentage of images without classes: ' + str(empty_labels/total_labels))
         return new_path + '/images/'
     else:
+        print('[INFO] percentage of images without classes: ' + str(empty_labels/total_labels))
         return path
 
 def img2label_paths(img_paths):

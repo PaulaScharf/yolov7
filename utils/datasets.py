@@ -653,8 +653,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         nL = len(labels)  # number of labels
         if nL:
             labels[:, 1:5] = xyxy2xywh(labels[:, 1:5])  # convert xyxy to xywh
-            labels[:, [2, 4]] /= img.shape[0]  # normalized height 0-1
-            labels[:, [1, 3]] /= img.shape[1]  # normalized width 0-1
+            labels[:, [2, 4]] /= imgs[0].shape[0]  # normalized height 0-1
+            labels[:, [1, 3]] /= imgs[0].shape[1]  # normalized width 0-1
 
         if self.augment:
             # flip up-down
@@ -843,8 +843,8 @@ def load_mosaic(self, index, no_channels):
     # Augment
     #img4, labels4, segments4 = remove_background(img4, labels4, segments4)
     #sample_segments(img4, labels4, segments4, probability=self.hyp['copy_paste'])
-    for i in range(int(img.shape[2]/no_channels)):
-        imgs4.append(img[:,:,img4.shape[2]-no_channels*(i+1):img4.shape[2]-no_channels*i])
+    for i in range(int(img4.shape[2]/no_channels)):
+        imgs4.append(img4[:,:,img4.shape[2]-no_channels*(i+1):img4.shape[2]-no_channels*i])
     imgs4, labels4, segments4 = copy_paste(imgs4, labels4, segments4, probability=self.hyp['copy_paste'], no_channels=no_channels)
     imgs4, labels4 = random_perspective(imgs4, labels4, segments4,
                                        degrees=self.hyp['degrees'],
@@ -922,8 +922,8 @@ def load_mosaic9(self, index, no_channels):
 
     # Augment
     #img9, labels9, segments9 = remove_background(img9, labels9, segments9)
-    for i in range(int(img.shape[2]/no_channels)):
-        imgs9.append(img[:,:,img9.shape[2]-no_channels*(i+1):img9.shape[2]-no_channels*i])
+    for i in range(int(img9.shape[2]/no_channels)):
+        imgs9.append(img9[:,:,img9.shape[2]-no_channels*(i+1):img9.shape[2]-no_channels*i])
     imgs9, labels9, segments9 = copy_paste(imgs9, labels9, segments9, probability=self.hyp['copy_paste'], no_channels=no_channels)
     imgs9, labels9 = random_perspective(imgs9, labels9, segments9,
                                        degrees=self.hyp['degrees'],
