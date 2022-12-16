@@ -19,7 +19,7 @@ def filter_no_class(path, max_perc):
         print('[INFO] reuse existing filtered images')
         return new_path + "/images"
     
-    labels_path = '/'.join(path.split('/')[:-2]) + '/labels/'
+    labels_path = '/'.join(path.split('/')[:-1]) + '/labels/'
     labels_files = os.listdir(labels_path)
     total_labels = len([name for name in labels_files if os.path.isfile(labels_path + name)])
     empty_labels = len([name for name in labels_files if os.path.isfile(labels_path + name) and os.stat(labels_path + name).st_size == 0])

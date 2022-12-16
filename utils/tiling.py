@@ -95,7 +95,7 @@ def tile_images_labels(path, tiles):
             imr = np.array(im, dtype=np.uint8)
         height = imr.shape[0]
         width = imr.shape[1]
-        labname = '/'.join(path.split('/')[:-2]) + '/labels/' + imname.split('/')[-1].split('.')[0] + '.txt'
+        labname = '/'.join(path.split('/')[:-1]) + '/labels/' + imname.split('/')[-1].split('.')[0] + '.txt'
         labels = pd.read_csv(labname, sep=' ', names=['class', 'x1', 'y1', 'w', 'h'])
         
         # we need to rescale coordinates from 0-1 to real image height and width
