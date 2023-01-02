@@ -45,6 +45,9 @@ def test(data,
          v5_metric=False,
          four_ch=False,
          multi_frame=1):
+
+    with open(save_dir / 'opt.yaml', 'w') as f:
+        yaml.dump(vars(opt), f, sort_keys=False)
     # Initialize/load model and set device
     training = model is not None
     if training:  # called by train.py
