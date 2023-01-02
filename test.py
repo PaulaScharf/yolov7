@@ -82,7 +82,7 @@ def test(data,
             data = yaml.load(f, Loader=yaml.SafeLoader)
     check_dataset(data)  # check
     nc = 1 if single_cls else int(data['nc'])  # number of classes
-    iouv = torch.linspace(50, 200, 10).to(device)  # iou vector for mAP@0.5:0.95
+    iouv = torch.linspace(50, 5, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
     # Logging
@@ -97,6 +97,8 @@ def test(data,
         task = opt.task if opt.task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
         if opt.tiles > 0:
             data[task] = tile_images_labels(data[task], opt.tiles)
+        if opt.no_class<100:
+            data[task] = filter_no_class(data[task], opt.no_class/100)
         dataloader = create_dataloader(data[task], imgsz, batch_size, gs, opt, pad=0.5, rect=True,
                                        prefix=colorstr(f'{task}: '), multi_frame = multi_frame, tiles=opt.tiles, four_ch=four_ch)[0]
 
@@ -323,6 +325,7 @@ if __name__ == '__main__':
     parser.add_argument('--tiles', type=int, default=0, help='how many tiles will be created (will be squared)')
     parser.add_argument('--four-channels', action='store_true', help='accept input images with 4 channels')
     parser.add_argument('--multi-frame', type=int, default=1, choices=range(1,101), help='how many frames to load at once')
+    parser.add_argument('--no-class', type=int, default=100, choices=range(0,101), metavar="[0-100]", help='maximum percentage of images without labels')
     opt = parser.parse_args()
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.data = check_file(opt.data)  # check file
