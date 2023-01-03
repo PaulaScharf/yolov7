@@ -46,8 +46,6 @@ def test(data,
          four_ch=False,
          multi_frame=1):
 
-    with open(save_dir / 'opt.yaml', 'w') as f:
-        yaml.dump(vars(opt), f, sort_keys=False)
     # Initialize/load model and set device
     training = model is not None
     if training:  # called by train.py
@@ -60,6 +58,9 @@ def test(data,
         # Directories
         save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+
+        with open(save_dir / 'opt.yaml', 'w') as f:
+            yaml.dump(vars(opt), f, sort_keys=False)
 
         if opt.tiles > 0:
             imgsz = int(imgsz/opt.tiles)
