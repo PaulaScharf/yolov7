@@ -61,7 +61,7 @@ def test(data,
 
         with open(save_dir / 'opt.yaml', 'w') as f:
             yaml.dump(vars(opt), f, sort_keys=False)
-
+            
         if opt.tiles > 0:
             imgsz = int(imgsz/opt.tiles)
 
@@ -86,7 +86,8 @@ def test(data,
             data = yaml.load(f, Loader=yaml.SafeLoader)
     check_dataset(data)  # check
     nc = 1 if single_cls else int(data['nc'])  # number of classes
-    iouv = torch.linspace(50, 5, 10).to(device)  # iou vector for mAP@0.5:0.95
+    iouv = torch.linspace(20, 5, 10).to(device)  # iou vector for mAP@0.5:0.95
+    # iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
     # Logging
@@ -211,16 +212,18 @@ def test(data,
                     # Search for detections
                     if pi.shape[0]:
                         # Prediction to target ious
-                        # ious, i = box_iou(predn[pi, :4], tbox[ti]).max(1)  # best ious, indices
+                        # ious, i = box_iou(predn[pi, :4], tbox[ti]).max(1)  # best ious because we take max, indices
                         ctr_dist, i = box_center_dist(predn[pi, :4], tbox[ti], shapes[si][0]).min(1)
 
                         # Append detections
                         detected_set = set()
+                        # for j in (ious > iouv[0]).nonzero(as_tuple=False):
                         for j in (ctr_dist < iouv[0]).nonzero(as_tuple=False):
                             d = ti[i[j]]  # detected target
                             if d.item() not in detected_set:
                                 detected_set.add(d.item())
                                 detected.append(d)
+                                # correct[pi[j]] = ious[j] > iouv  # iou_thres is 1xn
                                 correct[pi[j]] = ctr_dist[j] < iouv  # iou_thres is 1xn
                                 if len(detected) == nl:  # all targets already located in image
                                     break

@@ -1,6 +1,7 @@
 import argparse
 import time
 from pathlib import Path
+import yaml
 
 import cv2
 import torch
@@ -29,6 +30,9 @@ def detect(save_img=False):
     save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
     (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
+    with open(save_dir / 'opt.yaml', 'w') as f:
+        yaml.dump(vars(opt), f, sort_keys=False)
+        
     # Initialize
     set_logging()
     device = select_device(opt.device)
@@ -40,7 +44,7 @@ def detect(save_img=False):
     imgsz = check_img_size(imgsz/tiles, s=stride)  # check img_size
 
     if trace:
-        model = TracedModel(model, device, opt.img_size, multi_frame=multi_frame)
+        model = TracedModel(model, device, opt.img_size, multi_frame=multi_frame, four_channels=four_ch)
 
     if half:
         model.half()  # to FP16
@@ -217,10 +221,13 @@ if __name__ == '__main__':
     print(opt)
     #check_requirements(exclude=('pycocotools', 'thop'))
 
-    with torch.no_grad():
-        if opt.update:  # update all models (to fix SourceChangeWarning)
-            for opt.weights in ['yolov7.pt']:
-                detect()
-                strip_optimizer(opt.weights)
-        else:
-            detect()
+    device = select_device(opt.device)
+    print(device.type)
+
+    # with torch.no_grad():
+    #     if opt.update:  # update all models (to fix SourceChangeWarning)
+    #         for opt.weights in ['yolov7.pt']:
+    #             detect()
+    #             strip_optimizer(opt.weights)
+    #     else:
+    #         detect()

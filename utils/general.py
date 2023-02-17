@@ -468,14 +468,13 @@ def box_iou(box1, box2):
 def box_center_dist(box1, box2, shape):
     # https://github.com/pytorch/vision/blob/master/torchvision/ops/boxes.py
     """
-    Return intersection-over-union (Jaccard index) of boxes.
+    return euclidean distance between center points of boxes.
     Both sets of boxes are expected to be in (x1, y1, x2, y2) format.
     Arguments:
         box1 (Tensor[N, 4])
         box2 (Tensor[M, 4])
     Returns:
-        iou (Tensor[N, M]): the NxM matrix containing the pairwise
-            IoU values for every element in boxes1 and boxes2
+        euclidean distance
     """
 
     def box_center(box, shape):

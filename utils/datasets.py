@@ -200,7 +200,7 @@ class LoadImages:  # for inference
             self.count += 1
             if path.endswith('.npy'):
                 img0 = np.load(path)
-            elif path.endswith('.png'):
+            elif path.endswith('.png') or path.endswith('.JPG'):
                 img0 = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # BGR
             assert img0 is not None, 'Image Not Found ' + path
 
