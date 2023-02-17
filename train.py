@@ -458,7 +458,8 @@ def train(hyp, opt, device, tb_writer=None):
                                                  is_coco=is_coco,
                                                  v5_metric=opt.v5_metric,
                                                  four_ch=opt.four_channels, 
-                                                 multi_frame=opt.multi_frame)
+                                                 multi_frame=opt.multi_frame,
+                                                 center_point=opt.center_point)
 
             # Write
             with open(results_file, 'a') as f:
@@ -538,7 +539,8 @@ def train(hyp, opt, device, tb_writer=None):
                                           save_json=True,
                                           plots=False,
                                           is_coco=is_coco,
-                                          v5_metric=opt.v5_metric)
+                                          v5_metric=opt.v5_metric,
+                                          center_point=opt.center_point)
 
         # Strip optimizers
         final = best if best.exists() else last  # final model
@@ -609,6 +611,7 @@ if __name__ == '__main__':
     parser.add_argument('--no-class', type=int, default=100, choices=range(0,101), metavar="[0-100]", help='maximum percentage of images without labels')
     parser.add_argument('--four-channels', action='store_true', help='accept input images with 4 channels')
     parser.add_argument('--multi-frame', type=int, default=1, choices=range(1,101), help='how many frames to load at once')
+    parser.add_argument('--center-point', action='store_true', help='use center point metric instead of iou')
     opt = parser.parse_args()
 
     # Set DDP variables

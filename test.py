@@ -44,7 +44,8 @@ def test(data,
          is_coco=False,
          v5_metric=False,
          four_ch=False,
-         multi_frame=1):
+         multi_frame=1,
+         center_point=False):
 
     # Initialize/load model and set device
     training = model is not None
@@ -86,8 +87,10 @@ def test(data,
             data = yaml.load(f, Loader=yaml.SafeLoader)
     check_dataset(data)  # check
     nc = 1 if single_cls else int(data['nc'])  # number of classes
-    iouv = torch.linspace(20, 5, 10).to(device)  # iou vector for mAP@0.5:0.95
-    # iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
+    if center_point:
+        iouv = torch.linspace(20, 5, 10).to(device)  # center point vector for mAP@20:5
+    else:
+        iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
     # Logging
@@ -211,22 +214,34 @@ def test(data,
 
                     # Search for detections
                     if pi.shape[0]:
-                        # Prediction to target ious
-                        # ious, i = box_iou(predn[pi, :4], tbox[ti]).max(1)  # best ious because we take max, indices
-                        ctr_dist, i = box_center_dist(predn[pi, :4], tbox[ti], shapes[si][0]).min(1)
+                        if center_point:
+                            # Prediction to target center point distances
+                            ctr_dist, i = box_center_dist(predn[pi, :4], tbox[ti], shapes[si][0]).min(1)
 
-                        # Append detections
-                        detected_set = set()
-                        # for j in (ious > iouv[0]).nonzero(as_tuple=False):
-                        for j in (ctr_dist < iouv[0]).nonzero(as_tuple=False):
-                            d = ti[i[j]]  # detected target
-                            if d.item() not in detected_set:
-                                detected_set.add(d.item())
-                                detected.append(d)
-                                # correct[pi[j]] = ious[j] > iouv  # iou_thres is 1xn
-                                correct[pi[j]] = ctr_dist[j] < iouv  # iou_thres is 1xn
-                                if len(detected) == nl:  # all targets already located in image
-                                    break
+                            # Append detections
+                            detected_set = set()
+                            for j in (ctr_dist < iouv[0]).nonzero(as_tuple=False):
+                                d = ti[i[j]]  # detected target
+                                if d.item() not in detected_set:
+                                    detected_set.add(d.item())
+                                    detected.append(d)
+                                    correct[pi[j]] = ctr_dist[j] < iouv  # center point distance threshold is 1xn
+                                    if len(detected) == nl:  # all targets already located in image
+                                        break
+                        else:
+                            # Prediction to target ious
+                            ious, i = box_iou(predn[pi, :4], tbox[ti]).max(1)  # best ious because we take max, indices
+
+                            # Append detections
+                            detected_set = set()
+                            for j in (ious > iouv[0]).nonzero(as_tuple=False):
+                                d = ti[i[j]]  # detected target
+                                if d.item() not in detected_set:
+                                    detected_set.add(d.item())
+                                    detected.append(d)
+                                    correct[pi[j]] = ious[j] > iouv  # iou_thres is 1xn
+                                    if len(detected) == nl:  # all targets already located in image
+                                        break
 
             # Append statistics (correct, conf, pcls, tcls)
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
@@ -333,6 +348,7 @@ if __name__ == '__main__':
     parser.add_argument('--four-channels', action='store_true', help='accept input images with 4 channels')
     parser.add_argument('--multi-frame', type=int, default=1, choices=range(1,101), help='how many frames to load at once')
     parser.add_argument('--no-class', type=int, default=100, choices=range(0,101), metavar="[0-100]", help='maximum percentage of images without labels')
+    parser.add_argument('--center-point', action='store_true', help='use center point metric instead of iou')
     opt = parser.parse_args()
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.data = check_file(opt.data)  # check file
@@ -361,7 +377,7 @@ if __name__ == '__main__':
 
     elif opt.task == 'speed':  # speed benchmarks
         for w in opt.weights:
-            test(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, save_json=False, plots=False, v5_metric=opt.v5_metric)
+            test(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, save_json=False, plots=False, v5_metric=opt.v5_metric, center_point=opt.center_point)
 
     elif opt.task == 'study':  # run over a range of settings and save/plot
         # python test.py --task study --data coco.yaml --iou 0.65 --weights yolov7.pt
