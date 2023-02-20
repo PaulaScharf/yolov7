@@ -55,7 +55,7 @@ def train(hyp, opt, device, tb_writer=None):
     results_file = save_dir / 'results.txt'
 
     with open(results_file, 'a') as f:
-        f.write('       epoch   ram     _           _             _     _             _       size p          r       map50     map95     f1       _          _             _' + '\n')
+        f.write('   epoch       ram    box      obj       cla           _             _       size p          r       map50     map95     f1        vbox       vobj      vcla' + '\n')
 
     # Save run settings
     with open(save_dir / 'hyp.yaml', 'w') as f:
