@@ -222,12 +222,12 @@ def test(data,
                         # Append detections
                         # detected = []  # target indices
                         detected_set = set()
-                        for j in (ctr_dist < iouv[0]).nonzero(as_tuple=False):
+                        for j in (ctr_dist < cpv[0]).nonzero(as_tuple=False):
                             d = ti[i[j]]  # detected target
                             if d.item() not in detected_set:
                                 detected_set.add(d.item())
                                 detected.append(d)
-                                correct_cp[pi[j]] = ctr_dist[j] < iouv  # center point distance threshold is 1xn
+                                correct_cp[pi[j]] = ctr_dist[j] < cpv  # center point distance threshold is 1xn
                                 if len(detected) == nl:  # all targets already located in image
                                     break
                         ################# iou #####################
@@ -343,7 +343,7 @@ def test(data,
     maps = np.zeros(nc) + map_iou
     for i, c in enumerate(ap_class_iou):
         maps[c] = ap_iou[i]
-    return (mp_iou, mr_iou, map50_iou, map_iou, f1_iou, *(loss.cpu() / len(dataloader)).tolist()), maps, t
+    return (mp_iou, mr_iou, map50_iou, map_iou, f1_iou, *(loss.cpu() / len(dataloader)).tolist(), mp_cp, mr_cp, map50_cp, map_cp), maps, t
 
 
 if __name__ == '__main__':
