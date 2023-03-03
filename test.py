@@ -220,7 +220,7 @@ def test(data,
                         # Prediction to target center point distances
                         ctr_dist, i = box_center_dist(predn[pi, :4], tbox[ti], shapes[si][0]).min(1)
                         # Append detections
-                        # detected = []  # target indices
+                        detected = []  # target indices
                         detected_set = set()
                         for j in (ctr_dist < cpv[0]).nonzero(as_tuple=False):
                             d = ti[i[j]]  # detected target
