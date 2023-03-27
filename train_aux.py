@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import random
+import shutil
 import time
 from copy import deepcopy
 from pathlib import Path
@@ -26,12 +27,15 @@ from models.experimental import attempt_load
 from models.yolo import Model
 from utils.autoanchor import check_anchors
 from utils.datasets import create_dataloader
+from utils.tiling import tile_images_labels
+from utils.multi_frame import stack_images
+from utils.filter_no_class import filter_no_class
 from utils.general import labels_to_class_weights, increment_path, labels_to_image_weights, init_seeds, \
     fitness, strip_optimizer, get_latest_run, check_dataset, check_file, check_git_status, check_img_size, \
     check_requirements, print_mutation, set_logging, one_cycle, colorstr
 from utils.google_utils import attempt_download
 from utils.loss import ComputeLoss, ComputeLossAuxOTA
-from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
+from utils.plots import plot_lr_scheduler, plot_images, plot_labels, plot_results, plot_evolution
 from utils.torch_utils import ModelEMA, select_device, intersect_dicts, torch_distributed_zero_first, is_parallel
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 
@@ -49,6 +53,9 @@ def train(hyp, opt, device, tb_writer=None):
     last = wdir / 'last.pt'
     best = wdir / 'best.pt'
     results_file = save_dir / 'results.txt'
+
+    with open(results_file, 'a') as f:
+        f.write('   epoch       ram    box      obj       cla           _             _       size p          r       map50     map95     f1        vbox       vobj      vcla     p_iou     r_iou     map50_iou map95' + '\n')
 
     # Save run settings
     with open(save_dir / 'hyp.yaml', 'w') as f:
@@ -85,14 +92,14 @@ def train(hyp, opt, device, tb_writer=None):
         with torch_distributed_zero_first(rank):
             attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
-        model = Model(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        model = Model(opt.cfg or ckpt['model'].yaml, ch=(4 if opt.four_channels else 3)*opt.multi_frame, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
         exclude = ['anchor'] if (opt.cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
         state_dict = ckpt['model'].float().state_dict()  # to FP32
         state_dict = intersect_dicts(state_dict, model.state_dict(), exclude=exclude)  # intersect
         model.load_state_dict(state_dict, strict=False)  # load
         logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
     else:
-        model = Model(opt.cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        model = Model(opt.cfg, ch=(4 if opt.four_channels else 3)*opt.multi_frame, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
     with torch_distributed_zero_first(rank):
         check_dataset(data_dict)  # check
     train_path = data_dict['train']
@@ -194,7 +201,7 @@ def train(hyp, opt, device, tb_writer=None):
     else:
         lf = one_cycle(1, hyp['lrf'], epochs)  # cosine 1->hyp['lrf']
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
-    # plot_lr_scheduler(optimizer, scheduler, epochs)
+    plot_lr_scheduler(optimizer, scheduler, epochs)
 
     # EMA
     ema = ModelEMA(model) if rank in [-1, 0] else None
@@ -227,10 +234,34 @@ def train(hyp, opt, device, tb_writer=None):
 
         del ckpt, state_dict
 
+    # if opt.multi_frame > 1:
+        # multi_train_path = stack_images(train_path, opt.multi_frame)
+        # train_path = multi_train_path
+        # multi_test_path = stack_images(test_path, opt.multi_frame)
+        # test_path = multi_test_path
+
+    imgsz, imgsz_test = opt.img_size
+
+    if opt.tiles > 0:
+        tiled_train_path = tile_images_labels(train_path, opt.tiles)
+        train_path = tiled_train_path
+        imgsz = int(imgsz/opt.tiles)
+
+        tiled_test_path = tile_images_labels(test_path, opt.tiles)
+        test_path = tiled_test_path
+        imgsz_test = int(imgsz_test/opt.tiles)
+
+    if opt.no_class<100:
+        filt_train_path = filter_no_class(train_path, opt.no_class/100)
+        train_path = filt_train_path
+
+        filt_test_path = filter_no_class(test_path, opt.no_class/100)
+        test_path = filt_test_path
+
     # Image sizes
     gs = max(int(model.stride.max()), 32)  # grid size (max stride)
     nl = model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
-    imgsz, imgsz_test = [check_img_size(x, gs) for x in opt.img_size]  # verify imgsz are gs-multiples
+    imgsz, imgsz_test = [check_img_size(x, gs) for x in [imgsz, imgsz_test]]  # verify imgsz are gs-multiples
 
     # DP mode
     if cuda and rank == -1 and torch.cuda.device_count() > 1:
@@ -245,7 +276,8 @@ def train(hyp, opt, device, tb_writer=None):
     dataloader, dataset = create_dataloader(train_path, imgsz, batch_size, gs, opt,
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=rank,
                                             world_size=opt.world_size, workers=opt.workers,
-                                            image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '))
+                                            image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '),
+                                            multi_frame = opt.multi_frame, tiles=opt.tiles, four_ch=opt.four_channels)
     mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
     nb = len(dataloader)  # number of batches
     assert mlc < nc, 'Label class %g exceeds nc=%g in %s. Possible class labels are 0-%g' % (mlc, nc, opt.data, nc - 1)
@@ -255,7 +287,7 @@ def train(hyp, opt, device, tb_writer=None):
         testloader = create_dataloader(test_path, imgsz_test, batch_size * 2, gs, opt,  # testloader
                                        hyp=hyp, cache=opt.cache_images and not opt.notest, rect=True, rank=-1,
                                        world_size=opt.world_size, workers=opt.workers,
-                                       pad=0.5, prefix=colorstr('val: '))[0]
+                                       pad=0.5, prefix=colorstr('val: '), multi_frame = opt.multi_frame, tiles=opt.tiles, four_ch=opt.four_channels)[0]
 
         if not opt.resume:
             labels = np.concatenate(dataset.labels, 0)
@@ -263,7 +295,7 @@ def train(hyp, opt, device, tb_writer=None):
             # cf = torch.bincount(c.long(), minlength=nc) + 1.  # frequency
             # model._initialize_biases(cf.to(device))
             if plots:
-                #plot_labels(labels, names, save_dir, loggers)
+                # plot_labels(labels, names, save_dir, loggers)
                 if tb_writer:
                     tb_writer.add_histogram('classes', c, 0)
 
@@ -294,7 +326,7 @@ def train(hyp, opt, device, tb_writer=None):
     nw = max(round(hyp['warmup_epochs'] * nb), 1000)  # number of warmup iterations, max(3 epochs, 1k iterations)
     # nw = min(nw, (epochs - start_epoch) / 2 * nb)  # limit warmup to < 1/2 of training
     maps = np.zeros(nc)  # mAP per class
-    results = (0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
+    results = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls), P_cp, R_cp, mAP@.5_cp, mAP@.5-.95_cp,
     scheduler.last_epoch = start_epoch - 1  # do not move
     scaler = amp.GradScaler(enabled=cuda)
     compute_loss_ota = ComputeLossAuxOTA(model)  # init loss class
@@ -385,15 +417,15 @@ def train(hyp, opt, device, tb_writer=None):
                 pbar.set_description(s)
 
                 # Plot
-                if plots and ni < 10:
-                    f = save_dir / f'train_batch{ni}.jpg'  # filename
-                    Thread(target=plot_images, args=(imgs, targets, paths, f), daemon=True).start()
+                if plots and ni < 60:
+                    f = save_dir / f'train_batch{ni}.png'  # filename
+                    Thread(target=plot_images, args=(imgs, targets, paths, f, opt.four_channels, opt.multi_frame), daemon=True).start()
                     # if tb_writer:
                     #     tb_writer.add_image(f, result, dataformats='HWC', global_step=epoch)
                     #     tb_writer.add_graph(torch.jit.trace(model, imgs, strict=False), [])  # add model graph
                 elif plots and ni == 10 and wandb_logger.wandb:
                     wandb_logger.log({"Mosaics": [wandb_logger.wandb.Image(str(x), caption=x.name) for x in
-                                                  save_dir.glob('train*.jpg') if x.exists()]})
+                                                  save_dir.glob('train*.png') if x.exists()]})
 
             # end batch ------------------------------------------------------------------------------------------------
         # end epoch ----------------------------------------------------------------------------------------------------
@@ -421,11 +453,14 @@ def train(hyp, opt, device, tb_writer=None):
                                                  wandb_logger=wandb_logger,
                                                  compute_loss=compute_loss,
                                                  is_coco=is_coco,
-                                                 v5_metric=opt.v5_metric)
+                                                 v5_metric=opt.v5_metric,
+                                                 four_ch=opt.four_channels, 
+                                                 multi_frame=opt.multi_frame,
+                                                 center_point=opt.center_point)
 
             # Write
             with open(results_file, 'a') as f:
-                f.write(s + '%10.4g' * 7 % results + '\n')  # append metrics, val_loss
+                f.write(s + '%10.4g' * 12 % results + '\n')  # append metrics, val_loss
             if len(opt.name) and opt.bucket:
                 os.system('gsutil cp %s gs://%s/results/results%s.txt' % (results_file, opt.bucket, opt.name))
 
@@ -465,7 +500,7 @@ def train(hyp, opt, device, tb_writer=None):
                     torch.save(ckpt, wdir / 'best_{:03d}.pt'.format(epoch))
                 if epoch == 0:
                     torch.save(ckpt, wdir / 'epoch_{:03d}.pt'.format(epoch))
-                elif ((epoch+1) % 25) == 0:
+                elif ((epoch+1) % 1) == 0:
                     torch.save(ckpt, wdir / 'epoch_{:03d}.pt'.format(epoch))
                 elif epoch >= (epochs-5):
                     torch.save(ckpt, wdir / 'epoch_{:03d}.pt'.format(epoch))
@@ -501,7 +536,8 @@ def train(hyp, opt, device, tb_writer=None):
                                           save_json=True,
                                           plots=False,
                                           is_coco=is_coco,
-                                          v5_metric=opt.v5_metric)
+                                          v5_metric=opt.v5_metric,
+                                          center_point=opt.center_point)
 
         # Strip optimizers
         final = best if best.exists() else last  # final model
@@ -518,6 +554,15 @@ def train(hyp, opt, device, tb_writer=None):
     else:
         dist.destroy_process_group()
     torch.cuda.empty_cache()
+    # if opt.no_class < 100:
+    #     shutil.rmtree('/'.join(filt_train_path.split('/')[:-1]))
+    #     shutil.rmtree('/'.join(filt_test_path.split('/')[:-1]))
+    # if opt.tiles > 0:
+    #     shutil.rmtree('/'.join(tiled_train_path.split('/')[:-1]))
+    #     shutil.rmtree('/'.join(tiled_test_path.split('/')[:-1]))
+    # if opt.multi_frame > 1:
+    #     shutil.rmtree('/'.join(multi_train_path.split('/')[:-1]))
+    #     shutil.rmtree('/'.join(multi_test_path.split('/')[:-1]))
     return results
 
 
@@ -558,6 +603,11 @@ if __name__ == '__main__':
     parser.add_argument('--save_period', type=int, default=-1, help='Log model after every "save_period" epoch')
     parser.add_argument('--artifact_alias', type=str, default="latest", help='version of dataset artifact to be used')
     parser.add_argument('--v5-metric', action='store_true', help='assume maximum recall as 1.0 in AP calculation')
+    parser.add_argument('--tiles', type=int, default=0, help='how many tiles will be created (will be squared)')
+    parser.add_argument('--no-class', type=int, default=100, choices=range(0,101), metavar="[0-100]", help='maximum percentage of images without labels')
+    parser.add_argument('--four-channels', action='store_true', help='accept input images with 4 channels')
+    parser.add_argument('--multi-frame', type=int, default=1, choices=range(1,101), help='how many frames to load at once')
+    parser.add_argument('--center-point', action='store_true', help='use center point metric instead of iou')
     opt = parser.parse_args()
 
     # Set DDP variables
@@ -641,7 +691,7 @@ if __name__ == '__main__':
                 'flipud': (1, 0.0, 1.0),  # image flip up-down (probability)
                 'fliplr': (0, 0.0, 1.0),  # image flip left-right (probability)
                 'mosaic': (1, 0.0, 1.0),  # image mixup (probability)
-                'mixup': (1, 0.0, 1.0)}  # image mixup (probability)
+                'mixup': (1, 0.0, 1.0)}   # image mixup (probability)
         
         with open(opt.hyp, errors='ignore') as f:
             hyp = yaml.safe_load(f)  # load hyps dict
