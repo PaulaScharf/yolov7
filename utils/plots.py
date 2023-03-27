@@ -59,13 +59,14 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=3):
     tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
     c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
-    cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
+    img = cv2.rectangle(img.copy(), c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
     if label:
         tf = max(tl - 1, 1)  # font thickness
         t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
         c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
         cv2.rectangle(img, c1, c2, color, -1, cv2.LINE_AA)  # filled
         cv2.putText(img, label, (c1[0], c1[1] - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
+    return img
 
 
 def plot_one_box_PIL(box, img, color=None, label=None, line_thickness=None):
@@ -111,7 +112,7 @@ def output_to_target(output):
     return np.array(targets)
 
 
-def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max_size=640, max_subplots=16):
+def plot_images(images, targets, paths=None, fname='images.png', four_ch=False, multi_frame=1, names=None, max_size=640, max_subplots=16):
     # Plot image grid with labels
 
     if isinstance(images, torch.Tensor):
@@ -136,58 +137,76 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
         w = math.ceil(scale_factor * w)
 
     colors = color_list()  # list of colors
-    mosaic = np.full((int(ns * h), int(ns * w), 3), 255, dtype=np.uint8)  # init
-    for i, img in enumerate(images):
-        if i == max_subplots:  # if last batch has fewer images than we expect
-            break
+    mosaics = []
+    for frame in range(multi_frame):
+        frame += 1
+        mosaic = np.full((int(ns * h), int(ns * w), 4 if four_ch else 3), 255, dtype=np.uint8)  # init
+        for i, img in enumerate(images):
+            if i == max_subplots:  # if last batch has fewer images than we expect
+                break
+            
+            if four_ch:
+                img = img[(img.shape[0]-4*frame):(img.shape[0]-(4*frame-4)),:,:]
+            else:
+                img = img[(img.shape[0]-3*frame):(img.shape[0]-(3*frame-3)),:,:]
+            block_x = int(w * (i // ns))
+            block_y = int(h * (i % ns))
 
-        block_x = int(w * (i // ns))
-        block_y = int(h * (i % ns))
+            img = img.transpose(1, 2, 0)
+            if scale_factor < 1:
+                img = cv2.resize(img, (w, h))
 
-        img = img.transpose(1, 2, 0)
-        if scale_factor < 1:
-            img = cv2.resize(img, (w, h))
+            mosaic[block_y:block_y + h, block_x:block_x + w, :] = img
+            if len(targets) > 0:
+                image_targets = targets[targets[:, 0] == i]
+                boxes = xywh2xyxy(image_targets[:, 2:6]).T
+                classes = image_targets[:, 1].astype('int')
+                labels = image_targets.shape[1] == 6  # labels if no conf column
+                conf = None if labels else image_targets[:, 6]  # check for confidence presence (label vs pred)
 
-        mosaic[block_y:block_y + h, block_x:block_x + w, :] = img
-        if len(targets) > 0:
-            image_targets = targets[targets[:, 0] == i]
-            boxes = xywh2xyxy(image_targets[:, 2:6]).T
-            classes = image_targets[:, 1].astype('int')
-            labels = image_targets.shape[1] == 6  # labels if no conf column
-            conf = None if labels else image_targets[:, 6]  # check for confidence presence (label vs pred)
+                if boxes.shape[1]:
+                    if boxes.max() <= 1.01:  # if normalized with tolerance 0.01
+                        boxes[[0, 2]] *= w  # scale to pixels
+                        boxes[[1, 3]] *= h
+                    elif scale_factor < 1:  # absolute coords need scale if image scales
+                        boxes *= scale_factor
+                boxes[[0, 2]] += block_x
+                boxes[[1, 3]] += block_y
+                for j, box in enumerate(boxes.T):
+                    cls = int(classes[j])
+                    color = colors[cls % len(colors)]
+                    cls = names[cls] if names else cls
+                    if labels or conf[j] > 0.25:  # 0.25 conf thresh
+                        label = '%s' % cls if labels else '%s %.1f' % (cls, conf[j])
+                        mosaic = plot_one_box(box, mosaic, label=label, color=color, line_thickness=tl)
 
-            if boxes.shape[1]:
-                if boxes.max() <= 1.01:  # if normalized with tolerance 0.01
-                    boxes[[0, 2]] *= w  # scale to pixels
-                    boxes[[1, 3]] *= h
-                elif scale_factor < 1:  # absolute coords need scale if image scales
-                    boxes *= scale_factor
-            boxes[[0, 2]] += block_x
-            boxes[[1, 3]] += block_y
-            for j, box in enumerate(boxes.T):
-                cls = int(classes[j])
-                color = colors[cls % len(colors)]
-                cls = names[cls] if names else cls
-                if labels or conf[j] > 0.25:  # 0.25 conf thresh
-                    label = '%s' % cls if labels else '%s %.1f' % (cls, conf[j])
-                    plot_one_box(box, mosaic, label=label, color=color, line_thickness=tl)
+            # Draw image filename labels
+            if paths:
+                label = Path(paths[i]).name[:40]  # trim to 40 char
+                t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
+                cv2.putText(mosaic, label, (block_x + 5, block_y + t_size[1] + 5), 0, tl / 3, [220, 220, 220], thickness=tf,
+                            lineType=cv2.LINE_AA)
 
-        # Draw image filename labels
-        if paths:
-            label = Path(paths[i]).name[:40]  # trim to 40 char
-            t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
-            cv2.putText(mosaic, label, (block_x + 5, block_y + t_size[1] + 5), 0, tl / 3, [220, 220, 220], thickness=tf,
-                        lineType=cv2.LINE_AA)
+            # Image border
+            cv2.rectangle(mosaic, (block_x, block_y), (block_x + w, block_y + h), (255, 255, 255), thickness=3)
 
-        # Image border
-        cv2.rectangle(mosaic, (block_x, block_y), (block_x + w, block_y + h), (255, 255, 255), thickness=3)
-
-    if fname:
-        r = min(1280. / max(h, w) / ns, 1.0)  # ratio to limit image size
-        mosaic = cv2.resize(mosaic, (int(ns * w * r), int(ns * h * r)), interpolation=cv2.INTER_AREA)
-        # cv2.imwrite(fname, cv2.cvtColor(mosaic, cv2.COLOR_BGR2RGB))  # cv2 save
-        Image.fromarray(mosaic).save(fname)  # PIL save
-    return mosaic
+        if fname:
+            r = min(1280. / max(h, w) / ns, 1.0)  # ratio to limit image size
+            mosaic = cv2.resize(mosaic, (int(ns * w * r), int(ns * h * r)), interpolation=cv2.INTER_AREA)
+            # cv2.imwrite(fname, cv2.cvtColor(mosaic, cv2.COLOR_BGR2RGB))  # cv2 save
+            if four_ch:
+                mosaic = cv2.cvtColor(mosaic, cv2.COLOR_RGBA2BGRA) # BGRA to RGBA
+            if frame > 1:
+                fname_split = list(fname.parts)
+                fname_split[-1] = fname_split[-1].split('.')[0].split('-')[0] + '-' + str(frame) + '.' + fname_split[-1].split('.')[-1]
+                fname = Path(*fname_split)
+            else:
+                fname_split = list(fname.parts)
+                fname_split[-1] = fname_split[-1].split('.')[0] + '-' + str(frame) + '.' + fname_split[-1].split('.')[-1]
+                fname = Path(*fname_split)
+            Image.fromarray(mosaic).save(fname)  # PIL save
+        mosaics.append(mosaic)
+    return mosaics
 
 
 def plot_lr_scheduler(optimizer, scheduler, epochs=300, save_dir=''):
@@ -413,7 +432,7 @@ def plot_results(start=0, stop=0, bucket='', id=(), labels=(), save_dir=''):
     assert len(files), 'No results.txt files found in %s, nothing to plot.' % os.path.abspath(save_dir)
     for fi, f in enumerate(files):
         try:
-            results = np.loadtxt(f, usecols=[2, 3, 4, 8, 9, 12, 13, 14, 10, 11], ndmin=2).T
+            results = np.loadtxt(f, usecols=[2, 3, 4, 8, 9, 13, 14, 15, 10, 11], ndmin=2, skiprows=1).T
             n = results.shape[1]  # number of rows
             x = range(start, min(stop, n) if stop else n)
             for i in range(10):

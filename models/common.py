@@ -902,7 +902,7 @@ class autoShape(nn.Module):
                 im, f = np.asarray(Image.open(requests.get(im, stream=True).raw if im.startswith('http') else im)), im
             elif isinstance(im, Image.Image):  # PIL Image
                 im, f = np.asarray(im), getattr(im, 'filename', f) or f
-            files.append(Path(f).with_suffix('.jpg').name)
+            files.append(Path(f).with_suffix('.png').name)
             if im.shape[0] < 5:  # image in CHW
                 im = im.transpose((1, 2, 0))  # reverse dataloader .transpose(2, 0, 1)
             im = im[:, :, :3] if im.ndim == 3 else np.tile(im[:, :, None], 3)  # enforce 3ch input

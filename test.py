@@ -11,10 +11,12 @@ from tqdm import tqdm
 
 from models.experimental import attempt_load
 from utils.datasets import create_dataloader
-from utils.general import coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
+from utils.filter_no_class import filter_no_class
+from utils.general import box_center_dist, coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
     box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
+from utils.tiling import tile_images_labels
 from utils.torch_utils import select_device, time_synchronized, TracedModel
 
 
@@ -40,7 +42,11 @@ def test(data,
          half_precision=True,
          trace=False,
          is_coco=False,
-         v5_metric=False):
+         v5_metric=False,
+         four_ch=False,
+         multi_frame=1,
+         center_point=False):
+
     # Initialize/load model and set device
     training = model is not None
     if training:  # called by train.py
@@ -54,13 +60,19 @@ def test(data,
         save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
+        with open(save_dir / 'opt.yaml', 'w') as f:
+            yaml.dump(vars(opt), f, sort_keys=False)
+            
+        if opt.tiles > 0:
+            imgsz = int(imgsz/opt.tiles)
+
         # Load model
         model = attempt_load(weights, map_location=device)  # load FP32 model
         gs = max(int(model.stride.max()), 32)  # grid size (max stride)
         imgsz = check_img_size(imgsz, s=gs)  # check img_size
         
         if trace:
-            model = TracedModel(model, device, imgsz)
+            model = TracedModel(model, device, imgsz, multi_frame=multi_frame, four_channels=four_ch)
 
     # Half
     half = device.type != 'cpu' and half_precision  # half precision only supported on CUDA
@@ -75,6 +87,8 @@ def test(data,
             data = yaml.load(f, Loader=yaml.SafeLoader)
     check_dataset(data)  # check
     nc = 1 if single_cls else int(data['nc'])  # number of classes
+    cpv = torch.linspace(20, 5, 10).to(device)  # center point vector for mAP@20:5
+    ncp = cpv.numel()
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
@@ -85,10 +99,15 @@ def test(data,
     # Dataloader
     if not training:
         if device.type != 'cpu':
-            model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
+            layers = multi_frame*(4 if four_ch else 3)
+            model(torch.zeros(1, layers, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
         task = opt.task if opt.task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
+        if opt.tiles > 0:
+            data[task] = tile_images_labels(data[task], opt.tiles)
+        if opt.no_class<100:
+            data[task] = filter_no_class(data[task], opt.no_class/100)
         dataloader = create_dataloader(data[task], imgsz, batch_size, gs, opt, pad=0.5, rect=True,
-                                       prefix=colorstr(f'{task}: '))[0]
+                                       prefix=colorstr(f'{task}: '), multi_frame = multi_frame, tiles=opt.tiles, four_ch=four_ch)[0]
 
     if v5_metric:
         print("Testing with YOLOv5 AP metric...")
@@ -98,9 +117,11 @@ def test(data,
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     coco91class = coco80_to_coco91_class()
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
-    p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
+    t0, t1 = 0., 0.
+    p_iou, r_iou, f1_iou, mp_iou, mr_iou, map50_iou, map_iou = 0., 0., 0., 0., 0., 0., 0.
+    p_cp, r_cp, f1_cp, mp_cp, mr_cp, map50_cp, map_cp = 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
-    jdict, stats, ap, ap_class, wandb_images = [], [], [], [], []
+    jdict, stats_cp, stats_iou, ap_iou, ap_class_iou, ap_cp, ap_class_cp, wandb_images = [], [], [], [], [], [], [], []
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
         img = img.to(device, non_blocking=True)
         img = img.half() if half else img.float()  # uint8 to fp16/32
@@ -135,7 +156,8 @@ def test(data,
 
             if len(pred) == 0:
                 if nl:
-                    stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
+                    stats_iou.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
+                    stats_cp.append((torch.zeros(0, ncp, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
                 continue
 
             # Predictions
@@ -176,9 +198,9 @@ def test(data,
                                   'score': round(p[4], 5)})
 
             # Assign all predictions as incorrect
-            correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool, device=device)
+            correct_iou = torch.zeros(pred.shape[0], niou, dtype=torch.bool, device=device)
+            correct_cp = torch.zeros(pred.shape[0], ncp, dtype=torch.bool, device=device)
             if nl:
-                detected = []  # target indices
                 tcls_tensor = labels[:, 0]
 
                 # target boxes
@@ -194,48 +216,85 @@ def test(data,
 
                     # Search for detections
                     if pi.shape[0]:
-                        # Prediction to target ious
-                        ious, i = box_iou(predn[pi, :4], tbox[ti]).max(1)  # best ious, indices
-
+                        ################ cp ####################
+                        # Prediction to target center point distances
+                        ctr_dist, i = box_center_dist(predn[pi, :4], tbox[ti], shapes[si][0]).min(1)
                         # Append detections
+                        detected = []  # target indices
+                        detected_set = set()
+                        for j in (ctr_dist < cpv[0]).nonzero(as_tuple=False):
+                            d = ti[i[j]]  # detected target
+                            if d.item() not in detected_set:
+                                detected_set.add(d.item())
+                                detected.append(d)
+                                correct_cp[pi[j]] = ctr_dist[j] < cpv  # center point distance threshold is 1xn
+                                if len(detected) == nl:  # all targets already located in image
+                                    break
+                        ################# iou #####################
+                        # Prediction to target ious
+                        ious, i = box_iou(predn[pi, :4], tbox[ti]).max(1)  # best ious because we take max, indices
+                        # Append detections
+                        detected = []  # target indices
                         detected_set = set()
                         for j in (ious > iouv[0]).nonzero(as_tuple=False):
                             d = ti[i[j]]  # detected target
                             if d.item() not in detected_set:
                                 detected_set.add(d.item())
                                 detected.append(d)
-                                correct[pi[j]] = ious[j] > iouv  # iou_thres is 1xn
+                                correct_iou[pi[j]] = ious[j] > iouv  # iou_thres is 1xn
                                 if len(detected) == nl:  # all targets already located in image
                                     break
+                        ########################################
 
             # Append statistics (correct, conf, pcls, tcls)
-            stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
+            stats_iou.append((correct_iou.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
+            stats_cp.append((correct_cp.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
 
         # Plot images
-        if plots and batch_i < 3:
-            f = save_dir / f'test_batch{batch_i}_labels.jpg'  # labels
-            Thread(target=plot_images, args=(img, targets, paths, f, names), daemon=True).start()
-            f = save_dir / f'test_batch{batch_i}_pred.jpg'  # predictions
-            Thread(target=plot_images, args=(img, output_to_target(out), paths, f, names), daemon=True).start()
+        if plots and batch_i < 20:
+            f = save_dir / f'test_batch{batch_i}_labels.png'  # labels
+            Thread(target=plot_images, args=(img, targets, paths, f, four_ch, multi_frame, names), daemon=True).start()
+            f = save_dir / f'test_batch{batch_i}_pred.png'  # predictions
+            Thread(target=plot_images, args=(img, output_to_target(out), paths, f, four_ch, multi_frame, names), daemon=True).start()
 
+    ################# iou #####################
     # Compute statistics
-    stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
-    if len(stats) and stats[0].any():
-        p, r, ap, f1, ap_class = ap_per_class(*stats, plot=plots, v5_metric=v5_metric, save_dir=save_dir, names=names)
-        ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
-        mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
-        nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
+    stats_iou = [np.concatenate(x, 0) for x in zip(*stats_iou)]  # to numpy
+    if len(stats_iou) and stats_iou[0].any():
+        p_iou, r_iou, ap_iou, f1_iou, ap_class_iou = ap_per_class(*stats_iou, plot=plots, v5_metric=v5_metric, save_dir=save_dir, names=names)
+        ap50_iou, ap_iou = ap_iou[:, 0], ap_iou.mean(1)  # AP@0.5, AP@0.5:0.95
+        mp_iou, mr_iou, map50_iou, map_iou= p_iou.mean(), r_iou.mean(), ap50_iou.mean(), ap_iou.mean()
+        nt_iou = np.bincount(stats_iou[3].astype(np.int64), minlength=nc)  # number of targets per class
     else:
-        nt = torch.zeros(1)
-
+        nt_iou = torch.zeros(1)
     # Print results
+    print('iou metrics:')
     pf = '%20s' + '%12i' * 2 + '%12.3g' * 4  # print format
-    print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
-
+    print(pf % ('all', seen, nt_iou.sum(), mp_iou, mr_iou, map50_iou, map_iou))
     # Print results per class
-    if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
-        for i, c in enumerate(ap_class):
-            print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+    if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats_iou):
+        for i, c in enumerate(ap_class_iou):
+            print(pf % (names[c], seen, nt_iou[c], p_iou[i], r_iou[i], ap50_iou[i], ap_iou[i]))
+    ################ cp ####################
+    # Compute statistics
+    stats_cp = [np.concatenate(x, 0) for x in zip(*stats_cp)]  # to numpy
+    if len(stats_cp) and stats_cp[0].any():
+        p_cp, r_cp, ap_cp, f1_cp, ap_class_cp = ap_per_class(*stats_cp, plot=plots, v5_metric=v5_metric, save_dir=save_dir, names=names)
+        ap50_cp, ap_cp = ap_cp[:, 0], ap_cp.mean(1)  # AP@0.5, AP@0.5:0.95
+        mp_cp, mr_cp, map50_cp, map_cp= p_cp.mean(), r_cp.mean(), ap50_cp.mean(), ap_cp.mean()
+        nt_cp = np.bincount(stats_cp[3].astype(np.int64), minlength=nc)  # number of targets per class
+    else:
+        nt_cp = torch.zeros(1)
+    # Print results
+    print('center point metrics:')
+    pf = '%20s' + '%12i' * 2 + '%12.3g' * 4  # print format
+    print(pf % ('all', seen, nt_cp.sum(), mp_cp, mr_cp, map50_cp, map_cp))
+    # Print results per class
+    if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats_cp):
+        for i, c in enumerate(ap_class_cp):
+            print(pf % (names[c], seen, nt_cp[c], p_cp[i], r_cp[i], ap50_cp[i], ap_cp[i]))
+    ########################################
+
 
     # Print speeds
     t = tuple(x / seen * 1E3 for x in (t0, t1, t0 + t1)) + (imgsz, imgsz, batch_size)  # tuple
@@ -272,7 +331,7 @@ def test(data,
             eval.evaluate()
             eval.accumulate()
             eval.summarize()
-            map, map50 = eval.stats[:2]  # update results (mAP@0.5:0.95, mAP@0.5)
+            map_iou, map50_iou = eval.stats_iou[:2]  # update results (mAP@0.5:0.95, mAP@0.5)
         except Exception as e:
             print(f'pycocotools unable to run: {e}')
 
@@ -281,10 +340,10 @@ def test(data,
     if not training:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         print(f"Results saved to {save_dir}{s}")
-    maps = np.zeros(nc) + map
-    for i, c in enumerate(ap_class):
-        maps[c] = ap[i]
-    return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
+    maps = np.zeros(nc) + map_iou
+    for i, c in enumerate(ap_class_iou):
+        maps[c] = ap_iou[i]
+    return (mp_iou, mr_iou, map50_iou, map_iou, f1_iou, *(loss.cpu() / len(dataloader)).tolist(), mp_cp, mr_cp, map50_cp, map_cp), maps, t
 
 
 if __name__ == '__main__':
@@ -309,6 +368,11 @@ if __name__ == '__main__':
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--no-trace', action='store_true', help='don`t trace model')
     parser.add_argument('--v5-metric', action='store_true', help='assume maximum recall as 1.0 in AP calculation')
+    parser.add_argument('--tiles', type=int, default=0, help='how many tiles will be created (will be squared)')
+    parser.add_argument('--four-channels', action='store_true', help='accept input images with 4 channels')
+    parser.add_argument('--multi-frame', type=int, default=1, choices=range(1,101), help='how many frames to load at once')
+    parser.add_argument('--no-class', type=int, default=100, choices=range(0,101), metavar="[0-100]", help='maximum percentage of images without labels')
+    parser.add_argument('--center-point', action='store_true', help='use center point metric instead of iou')
     opt = parser.parse_args()
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.data = check_file(opt.data)  # check file
@@ -330,12 +394,15 @@ if __name__ == '__main__':
              save_hybrid=opt.save_hybrid,
              save_conf=opt.save_conf,
              trace=not opt.no_trace,
-             v5_metric=opt.v5_metric
+             v5_metric=opt.v5_metric,
+             multi_frame=opt.multi_frame,
+             four_ch=opt.four_channels,
+             center_point=opt.center_point
              )
 
     elif opt.task == 'speed':  # speed benchmarks
         for w in opt.weights:
-            test(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, save_json=False, plots=False, v5_metric=opt.v5_metric)
+            test(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, save_json=False, plots=False, v5_metric=opt.v5_metric, multi_frame=opt.multi_frame, four_ch=opt.four_channels,center_point=opt.center_point)
 
     elif opt.task == 'study':  # run over a range of settings and save/plot
         # python test.py --task study --data coco.yaml --iou 0.65 --weights yolov7.pt
@@ -346,7 +413,7 @@ if __name__ == '__main__':
             for i in x:  # img-size
                 print(f'\nRunning {f} point {i}...')
                 r, _, t = test(opt.data, w, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json,
-                               plots=False, v5_metric=opt.v5_metric)
+                               plots=False, v5_metric=opt.v5_metric, multi_frame=opt.multi_frame, four_ch=opt.four_channels, center_point=opt.center_point)
                 y.append(r + t)  # results and times
             np.savetxt(f, y, fmt='%10.4g')  # save
         os.system('zip -r study.zip study_*.txt')

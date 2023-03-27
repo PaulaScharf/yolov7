@@ -465,6 +465,34 @@ def box_iou(box1, box2):
     inter = (torch.min(box1[:, None, 2:], box2[:, 2:]) - torch.max(box1[:, None, :2], box2[:, :2])).clamp(0).prod(2)
     return inter / (area1[:, None] + area2 - inter)  # iou = inter / (area1 + area2 - inter)
 
+def box_center_dist(box1, box2, shape):
+    # https://github.com/pytorch/vision/blob/master/torchvision/ops/boxes.py
+    """
+    return euclidean distance between center points of boxes.
+    Both sets of boxes are expected to be in (x1, y1, x2, y2) format.
+    Arguments:
+        box1 (Tensor[N, 4])
+        box2 (Tensor[M, 4])
+    Returns:
+        euclidean distance
+    """
+
+    def box_center(box, shape):
+        # box = 4xn
+        # width = shape[1]
+        # height = shape[0]
+        # return ((box[0]+(box[2]-box[0])/2)/width, (box[1]+(box[3]-box[1])/2)/height)
+        return ((box[0]+(box[2]-box[0])/2), (box[1]+(box[3]-box[1])/2))
+
+    center1 = torch.stack(box_center(box1.T, shape), -1)
+    center2 = torch.stack(box_center(box2.T, shape), -1)
+
+    result=[]
+    for i in range(center2.shape[0]):
+        result.append(torch.sqrt(torch.square(center1[:,0]-center2[i,0])+torch.square(center1[:,1]-center2[i,1])))
+
+    return torch.stack(result,1)
+
 
 def wh_iou(wh1, wh2):
     # Returns the nxm IoU matrix. wh1 is nx2, wh2 is mx2
