@@ -1,3 +1,36 @@
+# Custom YOLOv7
+
+This is a customization of the official YOLOv7 implementation. The original Readme starts [here](https://github.com/PaulaScharf/yolov7-custom#official-yolov7). The customisations are:
+- [support for stacked images (or called multi-frame images)](https://github.com/PaulaScharf/yolov7-custom/edit/main/README.md#stacked-images)
+- [support for images with 4 channels](https://github.com/PaulaScharf/yolov7-custom/edit/main/README.md#4-channel-images)
+- [tiling and sampling of the images](https://github.com/PaulaScharf/yolov7-custom/edit/main/README.md#tiling-and-sampling)
+- [center point distance instead of IoU](https://github.com/PaulaScharf/yolov7-custom/edit/main/README.md#center-point-distance)
+- [measuring of inference](https://github.com/PaulaScharf/yolov7-custom/edit/main/README.md#measure-time)
+
+## Stacked Images
+
+The input images should have the numpy *.npy* format. Use the `multi-frame` parameter to set the number of frames that such an input image contain. This parameter is available in `train.py`, `test.py`, `detect.py` and `train_aux.py`. During training with stacked images it is ensured, that all the individual frames of a stack experience the same augmentations. For measuring the detection time of stacked images use `--mode 2` in `measure_inference.py`. 
+
+## 4 channel images
+
+This is intended for images with an additional background subtracted channel, that carries the background mask. This additional channel is excluded from pixelwise augmentations (e.g. HSV gains/losses). Use the `four-channels` parameter to enable training, testing or detection with such images. For measuring the detection, background subtraction and illumination smoothing time of four-channel-images use `--mode 1` in `measure_inference.py`.  
+
+## Tiling and Sampling
+
+Use the `tiles` parameter to cut input images into smaller parts during training or testing. The given number determines the number of cuts that are made both vertically and horizontally. The resulting tiles are written to file in a newly created folder `images_tiled` in the data input folder. This folder is not removed and if the network is trained or tested again with the `tiles` parameter, the tiles will simply be read from the folder. If you adjust the number of tiles be sure to delete the old `images_tiled` folder.
+
+Use the `no-class` parameter to randomly undersample images with no class present. The given number determines the percentage of images without classes in the input data. If the input data already contains fewer images without classes no undersampling is conducted. Just like for the tiling the sampled input images are written to a new folder `images_filtered`, which will be reused if present.
+
+If both the `tiles` and `no-class` parameter are present the undersampling will be applied on the tiled images.
+
+## Center Point Distance
+
+Use the `center-point` parameter to indicate that correct predictions are not determined through a minimum IoU with the ground truth, but through a maximum distance of the centers of bounding boxes. The distance is set between 5 and 20 pixels by default. The calculated map@.5 equates to a maximal distance of 20 pixels and map@[.5:.95] equates to a distance between 20 and 5 pixels.
+
+## Measure time
+
+Use the `measure-inference.py` script to measure detection time and also background subtraction and illumination smoothing time.
+
 # Official YOLOv7
 
 Implementation of paper - [YOLOv7: Trainable bag-of-freebies sets new state-of-the-art for real-time object detectors](https://arxiv.org/abs/2207.02696)
