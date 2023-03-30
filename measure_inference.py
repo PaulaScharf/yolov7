@@ -26,7 +26,7 @@ def normalizeIllumination(input, init_avs, a):
         init_avs.pop(0)
     init_av = np.mean(init_avs, axis=0)
 
-    input = (np.minimum(np.full(input.shape, 255),np.maximum((init_av + a*(input - current_av)), np.zeros(input.shape)))).astype('uint8')
+    input = (np.clip(init_av + a*(input - current_av), 0, 255)).astype('uint8')
     return input, init_avs
 
 
